@@ -34,55 +34,8 @@ from cryptography.hazmat.primitives.asymmetric import padding
 #
 # message = b'encrypt me!'
 #
-# encrypted = public_key.encrypt(
-#     message,
-#     padding.OAEP(
-#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
-#         algorithm=hashes.SHA256(),
-#         label=None
-#     )
-# )
-#
-# print(encrypted)
-#
-# original_message = private_key.decrypt(
-#     encrypted,
-#     padding.OAEP(
-#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
-#         algorithm=hashes.SHA256(),
-#         label=None
-#     )
-# )
 #
 # print(original_message)
-
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-
-# key = rsa.generate_private_key(
-#     backend=crypto_default_backend(),
-#     public_exponent=65537,
-#     key_size=2048
-# )
-#
-# private_key = key.private_bytes(
-#     crypto_serialization.Encoding.PEM,
-#     crypto_serialization.PrivateFormat.PKCS8,
-#     crypto_serialization.NoEncryption()
-# )
-#
-# public_key = key.public_key().public_bytes(
-#     crypto_serialization.Encoding.PEM,
-#     crypto_serialization.PublicFormat.PKCS1
-# )
-#
-# with open("./tmp/private2.key", 'wb') as content_file:
-#     chmod("./tmp/private2.key", 0o600)
-#     content_file.write(private_key)
-# with open("./tmp/public2.key", 'wb') as content_file:
-#     content_file.write(public_key)
 
 ################################################################################
 ################################################################################
