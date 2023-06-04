@@ -1,4 +1,6 @@
 import os
+
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization as crypto_serialization, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend as crypto_default_backend, default_backend
@@ -36,7 +38,7 @@ def gen_key(username):
     with open(f"./user/{username}/rsa_public.key", 'wb') as content_file:
         content_file.write(public_key)
 
-    return private_key, public_key
+    return private_key, public_key, key
 
 
 def encryption(message, public_key):
@@ -106,17 +108,19 @@ def pem_to_public_key(public_key):
 
 
 def test():
-    pr, pk = gen_key("ali")
+    pr, pk, key = gen_key("ali")
     msg = "Hello world!"
     enc_msg = encryption(msg, pem_to_public_key(pk))
     print(enc_msg)
 
-    dec_msg = decryption(msg, pem_to_private_key(pr))
+    dec_msg = decryption(enc_msg, pem_to_private_key(pr))
     print(dec_msg)
 
-    sig = sign(msg, pem_to_private_key(pr))
+    sig = sign(msg.encode("ASCII"), pem_to_private_key(pr))
     print(sig)
-    print(verify_signature(msg, sig, pem_to_public_key(pk)))
 
-
-test()
+    try:
+        verify_signature(msg.encode("ASCII"), sig, pem_to_public_key(pk))
+        print("signatures match")
+    except InvalidSignature:
+        print("signatures do not match")
