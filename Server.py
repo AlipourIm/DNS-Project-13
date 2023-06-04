@@ -10,9 +10,10 @@ log = logger_config("webserver")
 def establish_https_connection() -> socket.socket:
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    server_socket = ssl.wrap_socket(server_socket,
-                                    certfile='./keys/certificate.pem', keyfile="./keys/key.pem",
-                                    server_side=True, ssl_version=ssl.PROTOCOL_TLS)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile='./keys/certificate.pem', keyfile="./keys/key.pem")
+
+    server_socket = context.wrap_socket(server_socket, server_side=True)
 
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # This solves address already in use issue
 
