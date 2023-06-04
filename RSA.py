@@ -1,7 +1,7 @@
-from os import chmod
-from cryptography.hazmat.primitives import serialization as crypto_serialization
+import os
+from cryptography.hazmat.primitives import serialization as crypto_serialization, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.backends import default_backend as crypto_default_backend
+from cryptography.hazmat.backends import default_backend as crypto_default_backend, default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
@@ -24,8 +24,14 @@ def gen_key(username):
         crypto_serialization.PublicFormat.PKCS1
     )
 
+    if not os.path.isdir("./user"):
+        os.mkdir("./user")
+
+    if not os.path.isdir(f"./user/{username}"):
+        os.mkdir(f"./user/{username}")
+
     with open(f"./user/{username}/rsa_private.key", 'wb') as content_file:
-        chmod(f"./user/{username}/rsa_private.key", 0o600)
+        os.chmod(f"./user/{username}/rsa_private.key", 0o600)
         content_file.write(private_key)
     with open(f"./user/{username}/rsa_public.key", 'wb') as content_file:
         content_file.write(public_key)
@@ -35,7 +41,7 @@ def gen_key(username):
 
 def encryption(message, public_key):
     encrypted = public_key.encrypt(
-        message,
+        message.encode("ASCII"),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -54,6 +60,63 @@ def decryption(encrypted_message, private_key):
             algorithm=hashes.SHA256(),
             label=None
         )
-    )
+    ).decode("ASCII")
 
     return original_message
+
+
+def sign(message, private_key):
+    signature = private_key.sign(
+        message,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    return signature
+
+
+def verify_signature(message, signature, public_key):
+    return public_key.verify(
+        signature,
+        message,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+
+def pem_to_private_key(private_key):
+    return serialization.load_pem_private_key(
+        private_key,
+        password=None,
+        backend=default_backend()
+    )
+
+
+def pem_to_public_key(public_key):
+    return serialization.load_pem_public_key(
+        public_key,
+        backend=default_backend()
+    )
+
+
+def test():
+    pr, pk = gen_key("ali")
+    msg = "Hello world!"
+    enc_msg = encryption(msg, pem_to_public_key(pk))
+    print(enc_msg)
+
+    dec_msg = decryption(msg, pem_to_private_key(pr))
+    print(dec_msg)
+
+    sig = sign(msg, pem_to_private_key(pr))
+    print(sig)
+    print(verify_signature(msg, sig, pem_to_public_key(pk)))
+
+
+test()
