@@ -1,4 +1,5 @@
 import os
+import random
 import socket
 import ssl
 import threading
@@ -34,7 +35,7 @@ def response_client(client_socket, response):
     log.info(f"message to client: {response}")
 
 
-def register_new_user(client_socket, username, password, rsa_pk, elgamal_pk):
+def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk):
     for user in users:
         if user.username == username:
             response = f"400{Resources.SEP}" \
@@ -43,13 +44,44 @@ def register_new_user(client_socket, username, password, rsa_pk, elgamal_pk):
             response_client(client_socket, response)
             return
 
-    new_user = User(username, password, rsa_pk, elgamal_pk)
+    new_user = User(username, password_hash, rsa_pk, elgamal_pk)
     users.append(new_user)
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
                f"User registered successfully"
     response_client(client_socket, response)
     return new_user
+
+
+def login_user(client_socket, username):
+    for user in users:
+        if username == user.username:
+            salt = random.randint(0, 10 ** 50)
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}" \
+                       f"{salt}"
+            response_client(client_socket, response)
+            otp = client_socket.recv(Resources.BUFFER_SIZE).decode("ASCII")
+
+            if user.check_password(str(salt), otp):
+                response = f"200{Resources.SEP}" \
+                           f"OK{Resources.SEP}" \
+                           f"User {user.username} logged in successfully"
+                response_client(client_socket, response)
+                return
+
+            else:
+                response = f"400{Resources.SEP}" \
+                           f"Bad Request{Resources.SEP}" \
+                           f"Wrong password"
+                response_client(client_socket, response)
+                return
+
+    response = f"400{Resources.SEP}" \
+               f"Bad Request{Resources.SEP}" \
+               f"User does not exist"
+    response_client(client_socket, response)
+    return
 
 
 def show_users_list(client_socket):
@@ -81,6 +113,8 @@ def client_handler(client, address):
                 user = register_new_user(client, arr[1], arr[2], arr[3], arr[4])
             elif arr[0] == "show users list":
                 show_users_list(client)
+            elif arr[0] == "login":
+                login_user(client, arr[1])
 
     except (KeyboardInterrupt, IndexError):
         client.close()

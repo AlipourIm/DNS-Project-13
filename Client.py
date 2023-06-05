@@ -1,3 +1,4 @@
+import hashlib
 import os
 import socket
 import time
@@ -39,9 +40,10 @@ def register_new_user(username, password):
         return False
     rsa_pr, rsa_pk = RSA.gen_key(username)
     elgamal_pr, elgamal_pk = ElGamal.gen_key(username)
+    password_hash = Resources.get_hash(password)
     message = f"register{Resources.SEP}" \
               f"{username}{Resources.SEP}" \
-              f"{password}{Resources.SEP}" \
+              f"{password_hash}{Resources.SEP}" \
               f"{rsa_pk}{Resources.SEP}" \
               f"{elgamal_pk}{Resources.SEP}"
     https_socket.send(message.encode("ASCII"))
@@ -50,6 +52,28 @@ def register_new_user(username, password):
     if response[0] == "200":
         return True
     return False
+
+
+def login_user(username, password):
+    if not os.path.isdir(f"./user/{username}"):
+        print("You don't have the keys for this username")
+        return False
+    message = f"login{Resources.SEP}" \
+              f"{username}"
+    https_socket.send(message.encode("ASCII"))
+    response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
+
+    if response[0] == "200":
+        salt = response[2]
+        password_hash = Resources.get_hash(password)
+        otp = Resources.get_hash(salt + password_hash)
+        message = f"{otp}"
+        https_socket.send(message.encode("ASCII"))
+        response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
+        print(response[2])
+        return response[0] == "200"
+    else:
+        return False
 
 
 def retrieve_usernames_from_server():
@@ -93,7 +117,8 @@ def main_menu():
             if register_new_user(command[1], command[2]):
                 user_menu()
         elif command[0] == "login":
-            pass
+            if login_user(command[1], command[2]):
+                user_menu()
         else:
             print("Wrong command!")
 

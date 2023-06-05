@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 
@@ -18,3 +19,7 @@ def save_keys(username: str, method: str, private_key: str, public_key: str):
 
     with open(f"./user/{username}/{method}_public.key", 'wb') as content_file:
         content_file.write(public_key.encode("ASCII"))
+
+
+def get_hash(s: str):
+    return hashlib.sha256(s.encode("ASCII")).hexdigest()
