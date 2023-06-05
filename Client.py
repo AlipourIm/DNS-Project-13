@@ -30,6 +30,8 @@ def establish_HTTPS_connection() -> socket.socket:
 
 
 def register_new_user():
+    # TODO: gen_key() both ElGamal & RSA and send them to server along with our credentials
+
     pass
 
 

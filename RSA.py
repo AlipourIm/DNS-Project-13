@@ -38,7 +38,7 @@ def gen_key(username):
     with open(f"./user/{username}/rsa_public.key", 'wb') as content_file:
         content_file.write(public_key)
 
-    return private_key, public_key, key
+    return private_key, public_key
 
 
 def encryption(message, public_key):
@@ -108,7 +108,7 @@ def pem_to_public_key(public_key):
 
 
 def test():
-    pr, pk, key = gen_key("ali")
+    pr, pk = gen_key("ali")
     msg = "Hello world!"
     enc_msg = encryption(msg, pem_to_public_key(pk))
     print(enc_msg)
