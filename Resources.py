@@ -1,6 +1,10 @@
 import os
 
 
+SEP = "\r\n\r\n"
+BUFFER_SIZE = 10**6
+
+
 def save_keys(username: str, method: str, private_key: str, public_key: str):
     if not os.path.isdir("./user"):
         os.mkdir("./user")

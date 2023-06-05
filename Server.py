@@ -1,10 +1,14 @@
+import os
 import socket
 import ssl
 import threading
 
+from User import User
 from PrettyLogger import logger_config
+import Resources
 
 log = logger_config("webserver")
+users = []
 
 
 def establish_https_connection() -> socket.socket:
@@ -25,21 +29,51 @@ def establish_https_connection() -> socket.socket:
     return server_socket
 
 
+def response_client(client_socket, response):
+    client_socket.send(response.encode("ASCII"))
+    log.info(f"message to client: {response}")
+
+
+def register_new_user(client_socket, username, password, rsa_pk, elgamal_pk):
+    for user in users:
+        if user.username == username:
+            response = f"400{Resources.SEP}" \
+                       f"Bad Request{Resources.SEP}" \
+                       f"Username already exists"
+            response_client(client_socket, response)
+            return
+
+    new_user = User(username, password, rsa_pk, elgamal_pk)
+    users.append(new_user)
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User registered successfully"
+    response_client(client_socket, response)
+    return new_user
+
+
 def client_handler(client, address):
     log.info(f"Client with address {address} connected.")
+    user = None
 
     try:
         while True:
-            buffer = client.recv(1024).decode("ascii")
+            buffer = client.recv(Resources.BUFFER_SIZE).decode("ascii")
             log.info(f"message from client: {buffer.encode('ascii')}")
 
-            arr = buffer.split("\r\n\r\n", maxsplit=4)
-            arr[1] = arr[1]
-    except KeyboardInterrupt:
+            arr = buffer.split(Resources.SEP)
+
+            if len(buffer) == 0:
+                raise IndexError
+
+            if arr[0] == "register":
+                print("reg")
+                user = register_new_user(client, arr[1], arr[2], arr[3], arr[4])
+
+    except (KeyboardInterrupt, IndexError):
         client.close()
-        log.info(f"Client with address {address} disconnected.")
-    except IndexError:
-        client.close()
+        if user is not None:
+            user.set_offline()
         log.info(f"Client with address {address} disconnected.")
 
 
@@ -56,9 +90,7 @@ def https_client_handler(https_socket: socket.socket):
 
 def main():
     https_socket = establish_https_connection()
-
-    xclient_handler_thread = threading.Thread(target=https_client_handler, args=(https_socket,))
-    xclient_handler_thread.start()
+    https_client_handler(https_socket)
 
 
 if __name__ == "__main__":
