@@ -34,7 +34,6 @@ def establish_HTTPS_connection() -> socket.socket:
 
 
 def register_new_user(username, password):
-    # TODO: gen_key() both ElGamal & RSA and send them to server along with our credentials
     if os.path.isdir(f"./user/{username}"):
         print("User already exists with this username.")
         return False
@@ -47,14 +46,17 @@ def register_new_user(username, password):
               f"{elgamal_pk}{Resources.SEP}"
     https_socket.send(message.encode("ASCII"))
     response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
-    print(response)
+    print(response[2])
     if response[0] == "200":
         return True
     return False
 
 
-def retrieve_online_usernames_from_server():
-    pass
+def retrieve_usernames_from_server():
+    message = f"show users list"
+    https_socket.send(message.encode("ASCII"))
+    response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
+    print(response[2])
 
 
 def user_menu():
@@ -62,13 +64,13 @@ def user_menu():
         input("Press Enter to continue...")
         os.system('cls' if os.name == 'nt' else 'clear')
 
-        print("  1: show online users\n"
+        print("  1: show users list\n"
               "  2: open chat <username>\n"
               "  3: open group <group_name>\n"
               "  4: create group <group_name>")
         command = input("  > ").split()
         if command[0] == "show":
-            retrieve_online_usernames_from_server()
+            retrieve_usernames_from_server()
         elif command[0] == "open" and command[1] == "chat":
             pass
         elif command[0] == "open" and command[1] == "group":

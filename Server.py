@@ -52,6 +52,17 @@ def register_new_user(client_socket, username, password, rsa_pk, elgamal_pk):
     return new_user
 
 
+def show_users_list(client_socket):
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}"
+
+    for user in users:
+        response += f"- {user.username} ({'Online' if user.is_online else 'Offline'})\n"
+
+    response_client(client_socket, response[:-1])
+    return
+
+
 def client_handler(client, address):
     log.info(f"Client with address {address} connected.")
     user = None
@@ -67,8 +78,9 @@ def client_handler(client, address):
                 raise IndexError
 
             if arr[0] == "register":
-                print("reg")
                 user = register_new_user(client, arr[1], arr[2], arr[3], arr[4])
+            elif arr[0] == "show users list":
+                show_users_list(client)
 
     except (KeyboardInterrupt, IndexError):
         client.close()
