@@ -1,5 +1,10 @@
 import random
 
+import Resources
+
+alpha = 7
+q = 10 ** 50
+
 
 def power(base, exp, mod):
     arr = []
@@ -13,52 +18,54 @@ def power(base, exp, mod):
     return res
 
 
-class ElGamal:
-    alpha = 7
-    q = 10 ** 50
+def gcd(a, b):
+    if a < b:
+        return gcd(b, a)
+    elif a % b == 0:
+        return b
+    else:
+        return gcd(b, a % b)
 
-    def gcd(self, a, b):
-        if a < b:
-            return self.gcd(b, a)
-        elif a % b == 0:
-            return b
-        else:
-            return self.gcd(b, a % b)
 
-    def gen_key(self):  # TODO: use cryptography library for random key generation
-        private_key = random.randint(10 ** 20, self.q)
-        while self.gcd(self.q, private_key) != 1:
-            private_key = random.randint(10 ** 20, self.q)
-        public_key = power(self.alpha, private_key, self.q)
-        return private_key, public_key
+def gen_key(username=None):  # TODO: use cryptography library for random key generation
+    private_key = random.randint(10 ** 20, q)
+    while gcd(q, private_key) != 1:
+        private_key = random.randint(10 ** 20, q)
+    public_key = power(alpha, private_key, q)
 
-    def encryption(self, msg, public_key):
-        ct = []
-        k, _ = self.gen_key()
-        s = power(public_key, k, self.q)
-        p = power(self.alpha, k, self.q)
-        for i in range(0, len(msg)):
-            ct.append(msg[i])
-        print("g^k used= ", p)
-        print("g^ak used= ", s)
-        for i in range(0, len(ct)):
-            ct[i] = s * ord(ct[i])
-        return ct, p
+    if username is not None:
+        Resources.save_keys(username, "elgamal", str(private_key), str(public_key))
 
-    def decryption(self, ct, p, private_key):
-        pt = []
-        h = power(p, private_key, self.q)
-        for i in range(0, len(ct)):
-            pt.append(chr(int(ct[i] / h)))
-        return pt
+    return private_key, public_key
 
-    def test(self):
-        msg = input("Enter message: ")
-        private_key, public_key = self.gen_key()
-        print("alpha used=", self.alpha)
-        c1, c2 = self.encryption(msg, public_key)
-        print("Original Message  =", msg)
-        print("Encrypted Message =", c1)
-        pt = self.decryption(c1, c2, private_key)
-        d_msg = ''.join(pt)
-        print("Decrypted Message =", d_msg)
+
+def encryption(msg, public_key):
+    ct = []
+    k, _ = gen_key()
+    s = power(public_key, k, q)
+    p = power(alpha, k, q)
+    for i in range(0, len(msg)):
+        ct.append(msg[i])
+    for i in range(0, len(ct)):
+        ct[i] = s * ord(ct[i])
+    return ct, p
+
+
+def decryption(ct, p, private_key):
+    pt = []
+    h = power(p, private_key, q)
+    for i in range(0, len(ct)):
+        pt.append(chr(int(ct[i] / h)))
+    return pt
+
+
+def test():
+    msg = input("Enter message: ")
+    private_key, public_key = gen_key("ali")
+    print("alpha used=", alpha)
+    c1, c2 = encryption(msg, public_key)
+    print("Original Message  =", msg)
+    print("Encrypted Message =", c1)
+    pt = decryption(c1, c2, private_key)
+    d_msg = ''.join(pt)
+    print("Decrypted Message =", d_msg)

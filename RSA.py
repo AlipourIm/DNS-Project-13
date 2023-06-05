@@ -1,11 +1,11 @@
-import os
-
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization as crypto_serialization, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend as crypto_default_backend, default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+
+import Resources
 
 
 def gen_key(username):
@@ -26,17 +26,7 @@ def gen_key(username):
         crypto_serialization.PublicFormat.PKCS1
     )
 
-    if not os.path.isdir("./user"):
-        os.mkdir("./user")
-
-    if not os.path.isdir(f"./user/{username}"):
-        os.mkdir(f"./user/{username}")
-
-    with open(f"./user/{username}/rsa_private.key", 'wb') as content_file:
-        os.chmod(f"./user/{username}/rsa_private.key", 0o600)
-        content_file.write(private_key)
-    with open(f"./user/{username}/rsa_public.key", 'wb') as content_file:
-        content_file.write(public_key)
+    Resources.save_keys(username, "rsa", private_key.decode("ASCII"), public_key.decode("ASCII"))
 
     return private_key, public_key
 
