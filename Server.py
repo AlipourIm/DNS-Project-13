@@ -1,15 +1,38 @@
+import datetime
 import os
 import random
 import socket
 import ssl
 import threading
 
+import RSA
 from User import User
 from PrettyLogger import logger_config
 import Resources
 
 log = logger_config("webserver")
 users = []
+
+
+def verify_timestamp(timestamp):
+    event_time = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
+    if not (-datetime.timedelta(minutes=1) < event_time - datetime.datetime.now() < datetime.timedelta(minutes=1)):
+        raise Resources.NotFreshException
+
+
+def receive_from_client(client_socket, user: User):
+    response = client_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
+    signature = response[-1]
+    timestamp = response[-2]
+    signed_message = Resources.SEP.join(response[:-1])
+    original_message = Resources.SEP.join(response[:-2])
+
+    verify_timestamp(timestamp)
+
+    if user is not None:
+        RSA.verify_signature(signed_message, signature, RSA.pem_to_public_key(user.rsa_pk))
+
+    return original_message
 
 
 def establish_https_connection() -> socket.socket:
@@ -61,27 +84,29 @@ def login_user(client_socket, username):
                        f"OK{Resources.SEP}" \
                        f"{salt}"
             response_client(client_socket, response)
-            otp = client_socket.recv(Resources.BUFFER_SIZE).decode("ASCII")
+            otp = receive_from_client(client_socket, None)
 
             if user.check_password(str(salt), otp):
                 response = f"200{Resources.SEP}" \
                            f"OK{Resources.SEP}" \
-                           f"User {user.username} logged in successfully"
+                           f"User {user.username} logged in " \
+                           f"successfully"
                 response_client(client_socket, response)
-                return
+                user.set_online()
+                return user
 
             else:
                 response = f"400{Resources.SEP}" \
                            f"Bad Request{Resources.SEP}" \
                            f"Wrong password"
                 response_client(client_socket, response)
-                return
+                return None
 
     response = f"400{Resources.SEP}" \
                f"Bad Request{Resources.SEP}" \
                f"User does not exist"
     response_client(client_socket, response)
-    return
+    return None
 
 
 def show_users_list(client_socket):
@@ -101,7 +126,7 @@ def client_handler(client, address):
 
     try:
         while True:
-            buffer = client.recv(Resources.BUFFER_SIZE).decode("ascii")
+            buffer = receive_from_client(client, user)
             log.info(f"message from client: {buffer.encode('ascii')}")
 
             arr = buffer.split(Resources.SEP)
@@ -114,7 +139,7 @@ def client_handler(client, address):
             elif arr[0] == "show users list":
                 show_users_list(client)
             elif arr[0] == "login":
-                login_user(client, arr[1])
+                user = login_user(client, arr[1])
 
     except (KeyboardInterrupt, IndexError):
         client.close()

@@ -1,3 +1,5 @@
+import base64
+
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization as crypto_serialization, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -28,7 +30,7 @@ def gen_key(username):
 
     Resources.save_keys(username, "rsa", private_key.decode("ASCII"), public_key.decode("ASCII"))
 
-    return private_key, public_key
+    return private_key.decode("ASCII"), public_key.decode("ASCII")
 
 
 def encryption(message, public_key):
@@ -59,7 +61,7 @@ def decryption(encrypted_message, private_key):
 
 def sign(message, private_key):
     signature = private_key.sign(
-        message,
+        message.encode("ASCII"),
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()),
             salt_length=padding.PSS.MAX_LENGTH
@@ -67,13 +69,19 @@ def sign(message, private_key):
         hashes.SHA256()
     )
 
+    signature = base64.b64encode(signature)
+    signature = signature.decode("ASCII")
+
     return signature
 
 
 def verify_signature(message, signature, public_key):
+    signature = signature.encode("ASCII")
+    signature = base64.b64decode(signature)
+
     return public_key.verify(
         signature,
-        message,
+        message.encode("ASCII"),
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()),
             salt_length=padding.PSS.MAX_LENGTH
@@ -84,7 +92,7 @@ def verify_signature(message, signature, public_key):
 
 def pem_to_private_key(private_key):
     return serialization.load_pem_private_key(
-        private_key,
+        private_key.encode("ASCII"),
         password=None,
         backend=default_backend()
     )
@@ -92,7 +100,7 @@ def pem_to_private_key(private_key):
 
 def pem_to_public_key(public_key):
     return serialization.load_pem_public_key(
-        public_key,
+        public_key.encode("ASCII"),
         backend=default_backend()
     )
 
@@ -100,17 +108,17 @@ def pem_to_public_key(public_key):
 def test():
     pr, pk = gen_key("ali")
     msg = "Hello world!"
-    enc_msg = encryption(msg, pem_to_public_key(pk))
+    enc_msg = encryption(msg, pem_to_public_key(pk.decode("ASCII")))
     print(enc_msg)
 
-    dec_msg = decryption(enc_msg, pem_to_private_key(pr))
+    dec_msg = decryption(enc_msg, pem_to_private_key(pr.decode("ASCII")))
     print(dec_msg)
 
-    sig = sign(msg.encode("ASCII"), pem_to_private_key(pr))
+    sig = sign(msg, pem_to_private_key(pr.decode("ASCII")))
     print(sig)
 
     try:
-        verify_signature(msg.encode("ASCII"), sig, pem_to_public_key(pk))
+        verify_signature(msg, sig, pem_to_public_key(pk.decode("ASCII")))
         print("signatures match")
     except InvalidSignature:
         print("signatures do not match")

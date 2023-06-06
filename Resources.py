@@ -21,5 +21,28 @@ def save_keys(username: str, method: str, private_key: str, public_key: str):
         content_file.write(public_key.encode("ASCII"))
 
 
+def load_keys(username, password, privates):
+    with open("./tmp/public.key", "rb") as key_file:
+        rsa_pk = key_file.read().decode("ASCII")
+
+    with open(f"./user/{username}/elgamal_public.key", "rb") as key_file:
+        elgamal_pk = int(key_file.read().decode("ASCII"))
+
+    if privates:
+        with open(f"./user/{username}/rsa_private.key", "rb") as key_file:
+            rsa_pr = key_file.read().decode("ASCII")
+
+        with open(f"./user/{username}/elgamal_private.key", "rb") as key_file:
+            elgamal_pr = int(key_file.read().decode("ASCII"))
+
+        return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk
+
+    return rsa_pk, elgamal_pk
+
+
 def get_hash(s: str):
     return hashlib.sha256(s.encode("ASCII")).hexdigest()
+
+
+class NotFreshException(Exception):
+    pass
