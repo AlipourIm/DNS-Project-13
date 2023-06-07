@@ -107,9 +107,12 @@ def pem_to_public_key(public_key):
 
 def validate_keys(pr, pk):
     msg = "Hello world!"
-    enc_msg = encryption(msg, pem_to_public_key(pk))
-    dec_msg = decryption(enc_msg, pem_to_private_key(pr))
-    if msg != dec_msg:
+    try:
+        enc_msg = encryption(msg, pem_to_public_key(pk))
+        dec_msg = decryption(enc_msg, pem_to_private_key(pr))
+        if msg != dec_msg:
+            raise Resources.InvalidKeysException
+    except ValueError:
         raise Resources.InvalidKeysException
     return
 

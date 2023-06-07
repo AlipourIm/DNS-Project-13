@@ -35,14 +35,17 @@ def load_keys(username, password, privates):
         elgamal_pk = int(key_file.read().decode("ASCII"))
 
     if privates:
-        aes_key = AES.generate_symmetric_key(password)
-        with open(f"./user/{username}/rsa_private.key", "rb") as key_file:
-            encrypted_rsa_pr = key_file.read().decode("ASCII")
-            rsa_pr = AES.decrypt(encrypted_rsa_pr, aes_key)
+        try:
+            aes_key = AES.generate_symmetric_key(password)
+            with open(f"./user/{username}/rsa_private.key", "rb") as key_file:
+                encrypted_rsa_pr = key_file.read().decode("ASCII")
+                rsa_pr = AES.decrypt(encrypted_rsa_pr, aes_key)
 
-        with open(f"./user/{username}/elgamal_private.key", "rb") as key_file:
-            encrypted_elgamal_pr = key_file.read().decode("ASCII")
-            elgamal_pr = int(AES.decrypt(encrypted_elgamal_pr, aes_key))
+            with open(f"./user/{username}/elgamal_private.key", "rb") as key_file:
+                encrypted_elgamal_pr = key_file.read().decode("ASCII")
+                elgamal_pr = int(AES.decrypt(encrypted_elgamal_pr, aes_key))
+        except UnicodeDecodeError:
+            raise WrongPasswordException
 
         return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk
 
@@ -58,4 +61,8 @@ class NotFreshException(Exception):
 
 
 class InvalidKeysException(Exception):
+    pass
+
+
+class WrongPasswordException(Exception):
     pass

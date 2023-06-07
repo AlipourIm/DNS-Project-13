@@ -88,6 +88,9 @@ def login_user(username, password):
     except Resources.InvalidKeysException:
         print("Keys are not valid")
         return False
+    except Resources.WrongPasswordException:
+        print("Wrong password or keys are manipulated")
+        return False
     message = f"login{Resources.SEP}" \
               f"{username}"
     send_to_server(message, False)
