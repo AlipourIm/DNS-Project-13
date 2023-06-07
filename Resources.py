@@ -24,12 +24,11 @@ def save_keys(username: str, password: str, method: str, private_key: str, publi
     with open(f"./user/{username}/{method}_public.key", 'wb') as content_file:
         content_file.write(public_key.encode("ASCII"))
 
-    print("'" + private_key + "'")
-    print("###")
+    return
 
 
 def load_keys(username, password, privates):
-    with open("./tmp/public.key", "rb") as key_file:
+    with open(f"./user/{username}/rsa_public.key", "rb") as key_file:
         rsa_pk = key_file.read().decode("ASCII")
 
     with open(f"./user/{username}/elgamal_public.key", "rb") as key_file:
@@ -45,7 +44,6 @@ def load_keys(username, password, privates):
             encrypted_elgamal_pr = key_file.read().decode("ASCII")
             elgamal_pr = int(AES.decrypt(encrypted_elgamal_pr, aes_key))
 
-        print("'" + rsa_pr + "'")
         return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk
 
     return rsa_pk, elgamal_pk

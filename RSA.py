@@ -109,7 +109,6 @@ def validate_keys(pr, pk):
     msg = "Hello world!"
     enc_msg = encryption(msg, pem_to_public_key(pk))
     dec_msg = decryption(enc_msg, pem_to_private_key(pr))
-    print(msg != dec_msg)
     if msg != dec_msg:
         raise Resources.InvalidKeysException
     return
@@ -176,5 +175,3 @@ KjXJQPAOZXcCLBrQr+zlt8sD5qKkJ/9cfwIDAQAB
 
     # signature = sign(msg, pem_to_private_key(rsa_pr))
     # verify_signature(msg, signature, pem_to_public_key(rsa_pk))
-
-test2()

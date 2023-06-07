@@ -72,8 +72,8 @@ def register_new_user(username, password):
 
 def create_user(username, password):
     rsa_pr, rsa_pk, elgamal_pr, elgamal_pk = Resources.load_keys(username, password, True)
-    ElGamal.validate_keys(elgamal_pr, elgamal_pk)
     RSA.validate_keys(rsa_pr, rsa_pk)
+    ElGamal.validate_keys(elgamal_pr, elgamal_pk)
 
     return User.User(username, Resources.get_hash(password), rsa_pk, elgamal_pk, rsa_pr, elgamal_pr)
 
