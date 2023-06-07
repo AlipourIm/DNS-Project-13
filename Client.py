@@ -53,8 +53,8 @@ def register_new_user(username, password):
     if os.path.isdir(f"./user/{username}"):
         print("User already exists with this username.")
         return False
-    rsa_pr, rsa_pk = RSA.gen_key(username)
-    elgamal_pr, elgamal_pk = ElGamal.gen_key(username)
+    rsa_pr, rsa_pk = RSA.gen_key(username, password)
+    elgamal_pr, elgamal_pk = ElGamal.gen_key(username, password)
     password_hash = Resources.get_hash(password)
     message = f"register{Resources.SEP}" \
               f"{username}{Resources.SEP}" \
@@ -72,6 +72,9 @@ def register_new_user(username, password):
 
 def create_user(username, password):
     rsa_pr, rsa_pk, elgamal_pr, elgamal_pk = Resources.load_keys(username, password, True)
+    ElGamal.validate_keys(elgamal_pr, elgamal_pk)
+    RSA.validate_keys(rsa_pr, rsa_pk)
+
     return User.User(username, Resources.get_hash(password), rsa_pk, elgamal_pk, rsa_pr, elgamal_pr)
 
 
@@ -79,6 +82,11 @@ def login_user(username, password):
     global user
     if not os.path.isdir(f"./user/{username}"):
         print("You don't have the keys for this username")
+        return False
+    try:
+        user = create_user(username, password)
+    except Resources.InvalidKeysException:
+        print("Keys are not valid")
         return False
     message = f"login{Resources.SEP}" \
               f"{username}"
@@ -93,7 +101,6 @@ def login_user(username, password):
         send_to_server(message, False)
         response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
         print(response[2])
-        user = create_user(username, password)
         return response[0] == "200"
     else:
         return False

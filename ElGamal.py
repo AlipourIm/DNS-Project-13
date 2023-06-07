@@ -27,14 +27,14 @@ def gcd(a, b):
         return gcd(b, a % b)
 
 
-def gen_key(username=None):  # TODO: use cryptography library for random key generation
+def gen_key(username=None, password=None):  # TODO: use cryptography library for random key generation
     private_key = random.randint(10 ** 20, q)
     while gcd(q, private_key) != 1:
         private_key = random.randint(10 ** 20, q)
     public_key = power(alpha, private_key, q)
 
     if username is not None:
-        Resources.save_keys(username, "elgamal", str(private_key), str(public_key))
+        Resources.save_keys(username, password, "elgamal", str(private_key), str(public_key))
 
     return private_key, public_key
 
@@ -56,12 +56,22 @@ def decryption(ct, p, private_key):
     h = power(p, private_key, q)
     for i in range(0, len(ct)):
         pt.append(chr(int(ct[i] / h)))
-    return pt
+    result = ''.join(pt)
+    return result
+
+
+def validate_keys(pr, pk):
+    msg = "Hello world!"
+    c1, c2 = encryption(msg, pk)
+    dec_msg = decryption(c1, c2, pr)
+    if msg != dec_msg:
+        raise Resources.InvalidKeysException
+    return
 
 
 def test():
     msg = input("Enter message: ")
-    private_key, public_key = gen_key("ali")
+    private_key, public_key = gen_key("ali", "1234")
     print("alpha used=", alpha)
     c1, c2 = encryption(msg, public_key)
     print("Original Message  =", msg)

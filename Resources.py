@@ -1,12 +1,14 @@
 import hashlib
 import os
+import sys
 
+import AES
 
 SEP = "\r\n\r\n"
 BUFFER_SIZE = 10**6
 
 
-def save_keys(username: str, method: str, private_key: str, public_key: str):
+def save_keys(username: str, password: str, method: str, private_key: str, public_key: str):
     if not os.path.isdir("./user"):
         os.mkdir("./user")
 
@@ -15,10 +17,15 @@ def save_keys(username: str, method: str, private_key: str, public_key: str):
 
     with open(f"./user/{username}/{method}_private.key", 'wb') as content_file:
         os.chmod(f"./user/{username}/{method}_private.key", 0o600)
-        content_file.write(private_key.encode("ASCII"))
+        aes_key = AES.generate_symmetric_key(password)
+        private_key_encrypted = AES.encrypt(private_key, aes_key, AES.default_iv)
+        content_file.write(private_key_encrypted.encode("ASCII"))
 
     with open(f"./user/{username}/{method}_public.key", 'wb') as content_file:
         content_file.write(public_key.encode("ASCII"))
+
+    print("'" + private_key + "'")
+    print("###")
 
 
 def load_keys(username, password, privates):
@@ -29,12 +36,16 @@ def load_keys(username, password, privates):
         elgamal_pk = int(key_file.read().decode("ASCII"))
 
     if privates:
+        aes_key = AES.generate_symmetric_key(password)
         with open(f"./user/{username}/rsa_private.key", "rb") as key_file:
-            rsa_pr = key_file.read().decode("ASCII")
+            encrypted_rsa_pr = key_file.read().decode("ASCII")
+            rsa_pr = AES.decrypt(encrypted_rsa_pr, aes_key)
 
         with open(f"./user/{username}/elgamal_private.key", "rb") as key_file:
-            elgamal_pr = int(key_file.read().decode("ASCII"))
+            encrypted_elgamal_pr = key_file.read().decode("ASCII")
+            elgamal_pr = int(AES.decrypt(encrypted_elgamal_pr, aes_key))
 
+        print("'" + rsa_pr + "'")
         return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk
 
     return rsa_pk, elgamal_pk
@@ -45,4 +56,8 @@ def get_hash(s: str):
 
 
 class NotFreshException(Exception):
+    pass
+
+
+class InvalidKeysException(Exception):
     pass

@@ -1,7 +1,9 @@
 import base64
-import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import Resources
+
+
+default_iv = "0000000000000000"
 
 
 def generate_symmetric_key(raw_key: str):
@@ -9,7 +11,7 @@ def generate_symmetric_key(raw_key: str):
     return key
 
 
-def encrypt(message: str, key: str, iv):
+def encrypt(message: str, key: str, iv=default_iv):
     tmp_message = message
     extra = len(tmp_message) % 16
     if extra > 0:
@@ -20,11 +22,11 @@ def encrypt(message: str, key: str, iv):
     return base64.b64encode(cipher_text).decode("ASCII")
 
 
-def decrypt(cipher_text: str, key: str, iv):
+def decrypt(cipher_text: str, key: str, iv=default_iv):
     cipher = Cipher(algorithms.AES(key.encode("ASCII")), modes.CBC(iv.encode("ASCII")))
     decipher = cipher.decryptor()
     plain = decipher.update(base64.b64decode(cipher_text.encode("ASCII"))) + decipher.finalize()
-    return plain.decode("ASCII").strip()
+    return plain.decode("ASCII").rstrip(" ")
 
 
 def test():
