@@ -55,7 +55,7 @@ def establish_https_connection() -> socket.socket:
 
 def response_client(client_socket, response):
     client_socket.send(response.encode("ASCII"))
-    log.info(f"message to client: {response}")
+    log.info(f"message to client: {response.encode('ASCII')}")
 
 
 def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk):
@@ -109,6 +109,15 @@ def login_user(client_socket, username):
     return None
 
 
+def logout_user(client_socket, user: User):
+    user.set_offline()
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Goodbye!"
+    response_client(client_socket, response)
+    return None
+
+
 def show_users_list(client_socket):
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}"
@@ -127,7 +136,7 @@ def client_handler(client, address):
     try:
         while True:
             buffer = receive_from_client(client, user)
-            log.info(f"message from client: {buffer.encode('ascii')}")
+            log.info(f"message from client: {buffer.encode('ASCII')}")
 
             arr = buffer.split(Resources.SEP)
 
@@ -140,6 +149,8 @@ def client_handler(client, address):
                 show_users_list(client)
             elif arr[0] == "login":
                 user = login_user(client, arr[1])
+            elif arr[0] == "logout":
+                user = logout_user(client, user)
 
     except (KeyboardInterrupt, IndexError):
         client.close()

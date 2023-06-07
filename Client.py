@@ -113,6 +113,19 @@ def retrieve_usernames_from_server():
     print(response[2])
 
 
+def logout():
+    global user
+
+    message = "logout"
+    send_to_server(message, True)
+
+    response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
+    print(response[2])
+
+    user = None
+    return
+
+
 def user_menu():
     while True:
         input("Press Enter to continue...")
@@ -121,7 +134,8 @@ def user_menu():
         print("  1: show users list\n"
               "  2: open chat <username>\n"
               "  3: open group <group_name>\n"
-              "  4: create group <group_name>")
+              "  4: create group <group_name>\n"
+              "  5: logout")
         command = input("  > ").split()
         if command[0] == "show":
             retrieve_usernames_from_server()
@@ -131,6 +145,9 @@ def user_menu():
             pass
         elif command[0] == "create":
             pass
+        elif command[0] == "logout":
+            logout()
+            return
         else:
             print("Wrong command!")
 
