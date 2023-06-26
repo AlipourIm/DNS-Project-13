@@ -33,9 +33,9 @@ def gen_key(username, password):
     return private_key.decode("ASCII"), public_key.decode("ASCII")
 
 
-def encryption(message, public_key):
-    encrypted = public_key.encrypt(
-        message.encode("ASCII"),
+def encrypt_chunk(chunk, public_key):
+    return public_key.encrypt(
+        chunk.encode("ASCII"),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -43,18 +43,28 @@ def encryption(message, public_key):
         )
     )
 
-    return encrypted
+
+def encrypt(message: str, public_key) -> bytes:
+    chunks = [message[i:i + 190] for i in range(0, len(message), 190)]
+    encrypted_message = Resources.SEP.encode("ASCII").join([encrypt_chunk(chunk, public_key) for chunk in chunks])
+
+    return encrypted_message
 
 
-def decryption(encrypted_message, private_key):
-    original_message = private_key.decrypt(
-        encrypted_message,
+def decrypt_chunk(chunk, private_key):
+    return private_key.decrypt(
+        chunk,
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
             label=None
         )
     ).decode("ASCII")
+
+
+def decrypt(encrypted_message: bytes, private_key) -> str:
+    chunks = encrypted_message.split(Resources.SEP.encode("ASCII"))
+    original_message = "".join([decrypt_chunk(chunk, private_key) for chunk in chunks])
 
     return original_message
 
@@ -108,8 +118,8 @@ def pem_to_public_key(public_key):
 def validate_keys(pr, pk):
     msg = "Hello world!"
     try:
-        enc_msg = encryption(msg, pem_to_public_key(pk))
-        dec_msg = decryption(enc_msg, pem_to_private_key(pr))
+        enc_msg = encrypt(msg, pem_to_public_key(pk))
+        dec_msg = decrypt(enc_msg, pem_to_private_key(pr))
         if msg != dec_msg:
             raise Resources.InvalidKeysException
     except ValueError:
@@ -119,11 +129,19 @@ def validate_keys(pr, pk):
 
 def test():
     pr, pk = gen_key("ali", "1234")
-    msg = "Hello world!"
-    enc_msg = encryption(msg, pem_to_public_key(pk))
+    with open("./keys/rsa_public.pem") as f:
+        pk = f.read()
+    with open("./keys/key.pem") as f:
+        pr = f.read()
+    msg = """-----BEGIN RSA PUBLIC KEY-----
+MIIBCgKCAQEA1Ecbl1HUGjEsQBKouC+aKdC62oRKDdq+gIQxsEWk6GN+/hkEJhZg
+1RSvjUAAvuAvCxeYOJA0VpNeooxodzReahQQIDAQAB
+-----END RSA PUBLIC KEY-----
+"""
+    enc_msg = encrypt(msg, pem_to_public_key(pk))
     print(enc_msg)
 
-    dec_msg = decryption(enc_msg, pem_to_private_key(pr))
+    dec_msg = decrypt(enc_msg, pem_to_private_key(pr))
     print(dec_msg)
 
     sig = sign(msg, pem_to_private_key(pr))

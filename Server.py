@@ -6,12 +6,14 @@ import ssl
 import threading
 
 import RSA
+import SecureSocket
 from User import User
 from PrettyLogger import logger_config
 import Resources
 
 log = logger_config("webserver")
 users = []
+server_private_key = None
 
 
 def verify_timestamp(timestamp):
@@ -36,12 +38,13 @@ def receive_from_client(client_socket, user: User):
 
 
 def establish_https_connection() -> socket.socket:
+    global server_private_key
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile='./keys/certificate.pem', keyfile="./keys/key.pem")
-
-    server_socket = context.wrap_socket(server_socket, server_side=True)
+    with open("./keys/key.pem") as f:
+        server_private_key = RSA.pem_to_private_key(f.read())
 
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # This solves address already in use issue
 
@@ -115,7 +118,7 @@ def logout_user(client_socket, user: User):
                f"OK{Resources.SEP}" \
                f"Goodbye!"
     response_client(client_socket, response)
-    return None
+    return True
 
 
 def show_users_list(client_socket):
@@ -150,7 +153,8 @@ def client_handler(client, address):
             elif arr[0] == "login":
                 user = login_user(client, arr[1])
             elif arr[0] == "logout":
-                user = logout_user(client, user)
+                if logout_user(client, user):
+                    user = None
 
     except (KeyboardInterrupt, IndexError):
         client.close()
@@ -163,6 +167,8 @@ def https_client_handler(https_socket: socket.socket):
     try:
         while True:
             client, address = https_socket.accept()
+            client = SecureSocket.wrap_socket(client)
+            client.establish_server(server_private_key)
             handler_thread = threading.Thread(target=client_handler, args=(client, address))
             handler_thread.start()
     except KeyboardInterrupt:

@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives import serialization
 import ElGamal
 import RSA
 import Resources
+import SecureSocket
 import User
 from PrettyLogger import logger_config
 import ssl
@@ -18,21 +19,26 @@ log = logger_config("client")
 
 https_socket: socket.socket
 user: User.User
+server_public_key = None
 
 
 def establish_HTTPS_connection() -> socket.socket:
+    global server_public_key
     sleep_time = 1
     while True:
         try:
             hostname = 'localhost'
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.load_verify_locations("./keys/certificate.pem")
+            with open("./keys/rsa_public.pem") as f:
+                server_public_key = RSA.pem_to_public_key(f.read())
 
-            raw_sock = socket.create_connection((hostname, 12345))
-            tmp_https_socket = context.wrap_socket(raw_sock, server_hostname=hostname)
+            sock = socket.create_connection((hostname, 12345))
+            sock = SecureSocket.wrap_socket(sock)
+            sock.establish_client(server_public_key)
 
             log.info("Connected to Server successfully.")
-            return tmp_https_socket
+            return sock
 
         except ConnectionRefusedError:
             log.warning(f"Server is not responding... retrying in {sleep_time}")
@@ -133,7 +139,7 @@ def user_menu():
     while True:
         input("Press Enter to continue...")
         os.system('cls' if os.name == 'nt' else 'clear')
-
+        print(f"Welcome {user.username}.\n")
         print("  1: show users list\n"
               "  2: open chat <username>\n"
               "  3: open group <group_name>\n"
