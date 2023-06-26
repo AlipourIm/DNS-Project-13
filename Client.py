@@ -28,7 +28,7 @@ def establish_HTTPS_connection() -> socket.socket:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.load_verify_locations("./keys/certificate.pem")
 
-            raw_sock = socket.create_connection((hostname, 443))
+            raw_sock = socket.create_connection((hostname, 12345))
             tmp_https_socket = context.wrap_socket(raw_sock, server_hostname=hostname)
 
             log.info("Connected to Server successfully.")

@@ -45,10 +45,10 @@ def establish_https_connection() -> socket.socket:
 
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # This solves address already in use issue
 
-    server_socket.bind(('localhost', 443))
+    server_socket.bind(('localhost', 12345))
     server_socket.listen(5)
 
-    log.info("Server is listening on localhost:443")
+    log.info("Server is listening on localhost:12345")
 
     return server_socket
 
