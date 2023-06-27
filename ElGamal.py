@@ -27,14 +27,14 @@ def gcd(a, b):
         return gcd(b, a % b)
 
 
-def gen_key(username=None, password=None):  # TODO: use cryptography library for random key generation
+def gen_key(username=None, password=None, keyname="elgamal"):  # TODO: use cryptography library for random key generation
     private_key = random.randint(10 ** 20, q)
     while gcd(q, private_key) != 1:
         private_key = random.randint(10 ** 20, q)
     public_key = power(alpha, private_key, q)
 
     if username is not None:
-        Resources.save_keys(username, password, "elgamal", str(private_key), str(public_key))
+        Resources.save_keys(username, password, keyname, str(private_key), str(public_key))
 
     return private_key, public_key
 
@@ -79,3 +79,12 @@ def test():
     pt = decryption(c1, c2, private_key)
     d_msg = ''.join(pt)
     print("Decrypted Message =", d_msg)
+
+
+def test2():
+    pr1, pk1 = gen_key()
+    pr2, pk2 = gen_key()
+    print(power(pk1, pr2, q))
+    print(power(pk2, pr1, q))
+    return
+

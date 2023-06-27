@@ -33,7 +33,7 @@ def establish_HTTPS_connection() -> socket.socket:
             with open("./keys/rsa_public.pem") as f:
                 server_public_key = RSA.pem_to_public_key(f.read())
 
-            sock = socket.create_connection((hostname, 12345))
+            sock = socket.create_connection((hostname, 12346))
             sock = SecureSocket.wrap_socket(sock)
             sock.establish_client(server_public_key)
 
@@ -61,12 +61,14 @@ def register_new_user(username, password):
         return False
     rsa_pr, rsa_pk = RSA.gen_key(username, password)
     elgamal_pr, elgamal_pk = ElGamal.gen_key(username, password)
+    prekey_pr, prekey_pk = ElGamal.gen_key(username, password, "prekey")
     password_hash = Resources.get_hash(password)
     message = f"register{Resources.SEP}" \
               f"{username}{Resources.SEP}" \
               f"{password_hash}{Resources.SEP}" \
               f"{rsa_pk}{Resources.SEP}" \
-              f"{elgamal_pk}{Resources.SEP}"
+              f"{elgamal_pk}{Resources.SEP}" \
+              f"{prekey_pk}{Resources.SEP}"
     send_to_server(message, sign=False)
     response = https_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
     print(response[2])
@@ -77,11 +79,11 @@ def register_new_user(username, password):
 
 
 def create_user(username, password):
-    rsa_pr, rsa_pk, elgamal_pr, elgamal_pk = Resources.load_keys(username, password, True)
+    rsa_pr, rsa_pk, elgamal_pr, elgamal_pk ,prekey_pr, prekey_pk = Resources.load_keys(username, password, True)
     RSA.validate_keys(rsa_pr, rsa_pk)
     ElGamal.validate_keys(elgamal_pr, elgamal_pk)
 
-    return User.User(username, Resources.get_hash(password), rsa_pk, elgamal_pk, rsa_pr, elgamal_pr)
+    return User.User(username, Resources.get_hash(password), rsa_pk, elgamal_pk, prekey_pk, rsa_pr, elgamal_pr, prekey_pk)
 
 
 def login_user(username, password):

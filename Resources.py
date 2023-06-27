@@ -27,12 +27,15 @@ def save_keys(username: str, password: str, method: str, private_key: str, publi
     return
 
 
-def load_keys(username, password, privates):
+def load_keys(username, password, privates: bool):
     with open(f"./user/{username}/rsa_public.key", "rb") as key_file:
         rsa_pk = key_file.read().decode("ASCII")
 
     with open(f"./user/{username}/elgamal_public.key", "rb") as key_file:
         elgamal_pk = int(key_file.read().decode("ASCII"))
+
+    with open(f"./user/{username}/prekey_public.key", "rb") as key_file:
+        prekey_pk = int(key_file.read().decode("ASCII"))
 
     if privates:
         try:
@@ -44,10 +47,15 @@ def load_keys(username, password, privates):
             with open(f"./user/{username}/elgamal_private.key", "rb") as key_file:
                 encrypted_elgamal_pr = key_file.read().decode("ASCII")
                 elgamal_pr = int(AES.decrypt(encrypted_elgamal_pr, aes_key))
+
+            with open(f"./user/{username}/prekey_private.key", "rb") as key_file:
+                encrypted_prekey_pr = key_file.read().decode("ASCII")
+                prekey_pr = int(AES.decrypt(encrypted_prekey_pr, aes_key))
+
         except UnicodeDecodeError:
             raise WrongPasswordException
 
-        return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk
+        return rsa_pr, rsa_pk, elgamal_pr, elgamal_pk, prekey_pr, prekey_pk
 
     return rsa_pk, elgamal_pk
 

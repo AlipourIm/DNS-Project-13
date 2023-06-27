@@ -48,7 +48,7 @@ def establish_https_connection() -> socket.socket:
 
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # This solves address already in use issue
 
-    server_socket.bind(('localhost', 12345))
+    server_socket.bind(('localhost', 12346))
     server_socket.listen(5)
 
     log.info("Server is listening on localhost:12345")
@@ -61,7 +61,7 @@ def response_client(client_socket, response):
     log.info(f"message to client: {response.encode('ASCII')}")
 
 
-def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk):
+def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
     for user in users:
         if user.username == username:
             response = f"400{Resources.SEP}" \
@@ -70,7 +70,7 @@ def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk
             response_client(client_socket, response)
             return
 
-    new_user = User(username, password_hash, rsa_pk, elgamal_pk)
+    new_user = User(username, password_hash, rsa_pk, elgamal_pk, prekey_pk)
     users.append(new_user)
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
@@ -147,7 +147,7 @@ def client_handler(client, address):
                 raise IndexError
 
             if arr[0] == "register":
-                user = register_new_user(client, arr[1], arr[2], arr[3], arr[4])
+                user = register_new_user(client, arr[1], arr[2], arr[3], arr[4], arr[5])
             elif arr[0] == "show users list":
                 show_users_list(client)
             elif arr[0] == "login":
