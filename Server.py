@@ -1,9 +1,10 @@
 import datetime
-import os
+import json
 import random
 import socket
 import ssl
 import threading
+from typing import List, Dict
 
 import RSA
 import SecureSocket
@@ -12,7 +13,8 @@ from PrettyLogger import logger_config
 import Resources
 
 log = logger_config("webserver")
-users = []
+users: List[User] = []
+messages: Dict[str, List[str]] = {}
 server_private_key = None
 
 
@@ -56,12 +58,12 @@ def establish_https_connection() -> socket.socket:
     return server_socket
 
 
-def response_client(client_socket, response):
+def response_client(client_socket: socket.socket, response):
     client_socket.send(response.encode("ASCII"))
     log.info(f"message to client: {response.encode('ASCII')}")
 
 
-def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
+def register_new_user(client_socket: socket.socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
     for user in users:
         if user.username == username:
             response = f"400{Resources.SEP}" \
@@ -72,6 +74,8 @@ def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk
 
     new_user = User(username, password_hash, rsa_pk, elgamal_pk, prekey_pk)
     users.append(new_user)
+    messages[new_user.username] = []
+
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
                f"User registered successfully"
@@ -79,7 +83,7 @@ def register_new_user(client_socket, username, password_hash, rsa_pk, elgamal_pk
     return new_user
 
 
-def login_user(client_socket, username):
+def login_user(client_socket: socket.socket, username):
     for user in users:
         if username == user.username:
             salt = random.randint(0, 10 ** 50)
@@ -112,7 +116,7 @@ def login_user(client_socket, username):
     return None
 
 
-def logout_user(client_socket, user: User):
+def logout_user(client_socket: socket.socket, user: User):
     user.set_offline()
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
@@ -121,7 +125,7 @@ def logout_user(client_socket, user: User):
     return True
 
 
-def show_users_list(client_socket):
+def show_users_list(client_socket: socket.socket):
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}"
 
@@ -130,6 +134,49 @@ def show_users_list(client_socket):
 
     response_client(client_socket, response[:-1])
     return
+
+
+def retrieve_keys(client_socket: socket.socket, username: str):
+    for user in users:
+        if user.username == username:
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}"
+            response += user.rsa_pk + Resources.SEP + str(user.elgamal_pk) + Resources.SEP + str(user.prekey_pk)
+            response_client(client_socket, response)
+            return
+
+    response = f"404{Resources.SEP}" \
+               f"Not Found{Resources.SEP}" \
+               f"User does not exist."
+    response_client(client_socket, response)
+    return
+
+
+def x3dh_key_exchange(client_socket: socket.socket, message: str):
+    _type, source_username, target_username, text = message.split(Resources.SEP, maxsplit=4-1)
+    for user in users:
+        if user.username == target_username:
+            messages[user.username].append(message)
+
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}" \
+                       f"Message saved."
+            response_client(client_socket, response)
+            return
+
+    response = f"404{Resources.SEP}" \
+               f"Not Found{Resources.SEP}" \
+               f"User does not exist."
+    response_client(client_socket, response)
+    return
+
+
+def fetch_messages(client_socket: socket.socket, user: User):
+    print(messages)
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"{json.dumps(messages[user.username])}"
+    response_client(client_socket, response)
 
 
 def client_handler(client, address):
@@ -155,6 +202,12 @@ def client_handler(client, address):
             elif arr[0] == "logout":
                 if logout_user(client, user):
                     user = None
+            elif arr[0] == "retrieve keys":
+                retrieve_keys(client, arr[1])
+            elif arr[0] == "x3dh":
+                x3dh_key_exchange(client, buffer)
+            elif arr[0] == "fetch":
+                fetch_messages(client, user)
 
     except (KeyboardInterrupt, IndexError):
         client.close()

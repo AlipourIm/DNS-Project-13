@@ -69,6 +69,10 @@ def validate_keys(pr, pk):
     return
 
 
+def DH_key(public_key: int, private_key: int) -> int:
+    return power(public_key, private_key, q)
+
+
 def test():
     msg = input("Enter message: ")
     private_key, public_key = gen_key("ali", "1234")
@@ -84,7 +88,12 @@ def test():
 def test2():
     pr1, pk1 = gen_key()
     pr2, pk2 = gen_key()
-    print(power(pk1, pr2, q))
-    print(power(pk2, pr1, q))
+    print(DH_key(pk1, pr2))
+    print(DH_key(pk2, pr1))
+
+    pk1 = 71293181205877243162061948817390834627418775844007
+    pr2 = 40241777937871183506636962675501585388421733428689
+    pk2 = 43663677688158500221844850058921947500010626409607
+    pr1 = 71293181205877243162061948817390834627418775844007
     return
 
