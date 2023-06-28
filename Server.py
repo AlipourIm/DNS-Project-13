@@ -8,13 +8,14 @@ from typing import List, Dict
 
 import RSA
 import SecureSocket
+from Message import Message
 from User import User
 from PrettyLogger import logger_config
 import Resources
 
 log = logger_config("webserver")
 users: List[User] = []
-messages: Dict[str, List[str]] = {}
+messages: Dict[str, List[Message]] = {}
 server_private_key = None
 
 
@@ -53,7 +54,7 @@ def establish_https_connection() -> socket.socket:
     server_socket.bind(('localhost', 12346))
     server_socket.listen(5)
 
-    log.info("Server is listening on localhost:12345")
+    log.info("Server is listening on localhost:12346")
 
     return server_socket
 
@@ -152,11 +153,18 @@ def retrieve_keys(client_socket: socket.socket, username: str):
     return
 
 
-def x3dh_key_exchange(client_socket: socket.socket, message: str):
-    _type, source_username, target_username, text = message.split(Resources.SEP, maxsplit=4-1)
+def save_message(client_socket: socket.socket, message: str):
+    _type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=6-1)
+    message_obj = Message(message_type=_type,
+                          source_username=source_username,
+                          target_username=target_username,
+                          seq=seq,
+                          signature=signature,
+                          text=text)
+
     for user in users:
         if user.username == target_username:
-            messages[user.username].append(message)
+            messages[user.username].append(message_obj)
 
             response = f"200{Resources.SEP}" \
                        f"OK{Resources.SEP}" \
@@ -172,11 +180,14 @@ def x3dh_key_exchange(client_socket: socket.socket, message: str):
 
 
 def fetch_messages(client_socket: socket.socket, user: User):
-    print(messages)
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
-               f"{json.dumps(messages[user.username])}"
+               f"{json.dumps([str(message) for message in messages[user.username]])}"
     response_client(client_socket, response)
+
+    buffer = receive_from_client(client_socket, user)
+    if buffer == "ack":
+        messages[user.username] = []
 
 
 def client_handler(client, address):
@@ -205,7 +216,9 @@ def client_handler(client, address):
             elif arr[0] == "retrieve keys":
                 retrieve_keys(client, arr[1])
             elif arr[0] == "x3dh":
-                x3dh_key_exchange(client, buffer)
+                save_message(client, buffer)
+            elif arr[0] == "text":
+                save_message(client, buffer)
             elif arr[0] == "fetch":
                 fetch_messages(client, user)
 
