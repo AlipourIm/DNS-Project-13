@@ -6,16 +6,15 @@ from Message import Message
 
 class Chat:
 
-    root_key: str = ""
-    message_key: str = ""
-    DH_key: int = 0
-    our_pr: int = 0
-    their_pk: int = 0
-
     def __init__(self, username):
-        self.seq = 0    # Next expected message
+        self.seq = 0  # Next expected message
         self.username = username
         self.messages: List[Message] = []
+        self.root_key: str = ""
+        self.message_key: str = ""
+        self.DH_key: int = 0
+        self.our_pr: int = 0
+        self.their_pk: int = 0
 
     def append_message(self, message: Message):
         self.messages.append(message)

@@ -29,6 +29,68 @@ chats: Dict[str, Chat] = {}
 server_public_key = None
 
 
+def save_to_db():
+    db = {"users": [], "chats": []}
+    for user in users:
+        new_user = {"rsa_pk": user.rsa_pk, "elgamal_pk": user.elgamal_pk, "prekey_pk": user.prekey_pk,
+                    "username": user.username}
+        db["users"].append(new_user)
+    for username in chats:
+        chat = chats[username]
+        new_chat = {"root_key": chat.root_key,
+                    "message_key": chat.message_key,
+                    "DH_key": str(chat.DH_key),
+                    "their_pk": str(chat.their_pk),
+                    "seq": chat.seq,
+                    "username": chat.username,
+                    "messages": []}
+
+        for message in chat.messages:
+            new_chat["messages"].append({"source_rsa_pk": message.source_rsa_pk,
+                                         "message_type": message.message_type,
+                                         "source_username": message.source_username,
+                                         "target_username": message.target_username,
+                                         "seq": message.seq, "signature": message.signature,
+                                         "text": message.text
+                                         })
+        db["chats"].append(new_chat)
+
+    with open(f"./user/{client_user.username}/{client_user.username}_db.imal", 'wb') as db_file:
+        content = json.dumps(db)
+        aes_key = AES.generate_symmetric_key(client_user.password_hash)
+        db_encrypted = AES.encrypt(content, aes_key, AES.default_iv)
+        db_file.write(db_encrypted.encode("ASCII"))
+
+
+def load_db(username, password_hash):
+    global users, chats
+
+    with open(f"./user/{username}/{username}_db.imal", 'rb') as db_file:
+        db_encrypted = db_file.read().decode("ASCII")
+        aes_key = AES.generate_symmetric_key(password_hash)
+        content = AES.decrypt(db_encrypted, aes_key, AES.default_iv)
+        db = json.loads(content)
+
+    for user in db["users"]:
+        new_user = User(user["username"], user["rsa_pk"], "", user["elgamal_pk"], user["prekey_pk"])
+        users.append(new_user)
+
+    for chat in db["chats"]:
+        username = chat["username"]
+        chats[username] = Chat(username)
+        chats[username].root_key = chat["root_key"]
+        chats[username].message_key = chat["message_key"]
+        chats[username].DH_key = chat["DH_key"]
+        chats[username].their_pk = chat["their_pk"]
+        chats[username].seq = chat["seq"]
+        chats[username].messages = []
+
+        for message in chat["messages"]:
+            new_message = Message(message["message_type"], message["source_username"], message["target_username"], message["seq"], message["signature"], message["text"])
+            new_message.source_rsa_pk = message["source_rsa_pk"]
+            chats[username].messages.append(new_message)
+
+
 def establish_HTTPS_connection() -> socket.socket:
     global server_public_key
     sleep_time = 1
@@ -111,6 +173,7 @@ def login_user(username, password):
     except Resources.WrongPasswordException:
         print("Wrong password or keys are manipulated")
         return False
+    load_db(username, Resources.get_hash(password))
     message = f"login{Resources.SEP}" \
               f"{username}"
     send_to_server(message, False)
@@ -141,6 +204,7 @@ def logout():
 
     message = "logout"
     send_to_server(message, True)
+    save_to_db()
 
     response = receive_from_server().split(Resources.SEP)
     print(response[2])
