@@ -88,7 +88,8 @@ def load_db(username, password_hash):
         chats[username].messages = []
 
         for message in chat["messages"]:
-            new_message = Message(message["message_type"], message["source_username"], message["target_username"], message["seq"], message["signature"], message["text"])
+            new_message = Message(message["message_type"], message["source_username"], message["target_username"],
+                                  message["seq"], message["signature"], message["text"])
             new_message.source_rsa_pk = message["source_rsa_pk"]
             chats[username].messages.append(new_message)
 
@@ -138,7 +139,7 @@ def register_new_user(username, password):
     rsa_pr, rsa_pk = RSA.gen_key(username, password)
     elgamal_pr, elgamal_pk = ElGamal.gen_key(username, password)
     prekey_pr, prekey_pk = ElGamal.gen_key(username, password, "prekey")
-    password_hash = Resources.get_hash(password)
+    password_hash = Resources.get_hash(username + password)
     message = f"register{Resources.SEP}" \
               f"{username}{Resources.SEP}" \
               f"{password_hash}{Resources.SEP}" \
@@ -183,7 +184,7 @@ def login_user(username, password):
 
     if response[0] == "200":
         salt = response[2]
-        password_hash = Resources.get_hash(password)
+        password_hash = Resources.get_hash(username + password)
         otp = Resources.get_hash(salt + password_hash)
         message = f"{otp}"
         send_to_server(message, False)
@@ -436,6 +437,12 @@ def open_chat(username: str) -> bool:
     return False
 
 
+def verify_keys(chat: Chat):
+    fetch_messages()
+    print("To verify the conversation is end-to-end encrypted, compare the following hash of keys with your friend's:")
+    print(Resources.get_hash(chat.message_key)[:10])
+
+
 def chat_menu(chat: Chat):
     while True:
         input("Press Enter to continue...")
@@ -443,13 +450,17 @@ def chat_menu(chat: Chat):
         print(f"Welcome {client_user.username}.\n")
         print("  1: refresh\n"
               "  2: send <message>\n"
-              "  3: back")
+              "  3: verify keys\n"
+              "  4: back")
         command = input("  > ").split()
+        print()
         if command[0] == "refresh":
             fetch_messages()
             print_chat(chat)
         elif command[0] == "send":
             send_message(chat, ' '.join(command[1:]))
+        elif command[0] == "verify":
+            verify_keys(chat)
         elif command[0] == "back":
             return
 
@@ -465,6 +476,7 @@ def user_menu():
               "  4: create group <group_name>\n"
               "  5: logout")
         command = input("  > ").split()
+        print()
         if command[0] == "show":
             retrieve_usernames_from_server()
         elif command[0] == "open" and command[1] == "chat":
@@ -490,6 +502,7 @@ def main_menu():
         print("  1: register <username> <password>\n"
               "  2: login <username> <password>")
         command = input("  > ").split()
+        print()
         if command[0] == "register" and len(command) == 3:
             if register_new_user(command[1], command[2]):
                 user_menu()
@@ -505,4 +518,5 @@ if __name__ == "__main__":
     try:
         main_menu()
     finally:
+        save_to_db()
         https_socket.close()
