@@ -39,8 +39,9 @@ def save_to_db():
         chat = chats[username]
         new_chat = {"root_key": chat.root_key,
                     "message_key": chat.message_key,
-                    "DH_key": str(chat.DH_key),
-                    "their_pk": str(chat.their_pk),
+                    "DH_key": chat.DH_key,
+                    "our_pr": chat.our_pr,
+                    "their_pk": chat.their_pk,
                     "seq": chat.seq,
                     "username": chat.username,
                     "messages": []}
@@ -81,6 +82,7 @@ def load_db(username, password_hash):
         chats[username].root_key = chat["root_key"]
         chats[username].message_key = chat["message_key"]
         chats[username].DH_key = chat["DH_key"]
+        chats[username].our_pr = chat["our_pr"]
         chats[username].their_pk = chat["their_pk"]
         chats[username].seq = chat["seq"]
         chats[username].messages = []
