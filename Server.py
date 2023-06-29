@@ -19,12 +19,6 @@ messages: Dict[str, List[Message]] = {}
 server_private_key = None
 
 
-def verify_timestamp(timestamp):
-    event_time = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
-    if not (-datetime.timedelta(minutes=1) < event_time - datetime.datetime.now() < datetime.timedelta(minutes=1)):
-        raise Resources.NotFreshException
-
-
 def receive_from_client(client_socket, user: User):
     response = client_socket.recv(Resources.BUFFER_SIZE).decode("ASCII").split(Resources.SEP)
     signature = response[-1]
@@ -32,7 +26,7 @@ def receive_from_client(client_socket, user: User):
     signed_message = Resources.SEP.join(response[:-1])
     original_message = Resources.SEP.join(response[:-2])
 
-    verify_timestamp(timestamp)
+    Resources.verify_timestamp(timestamp)
 
     if user is not None:
         RSA.verify_signature(signed_message, signature, RSA.pem_to_public_key(user.rsa_pk))

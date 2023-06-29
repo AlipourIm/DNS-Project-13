@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import os
 import sys
@@ -74,3 +75,9 @@ class InvalidKeysException(Exception):
 
 class WrongPasswordException(Exception):
     pass
+
+
+def verify_timestamp(timestamp):
+    event_time = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
+    if not (-datetime.timedelta(minutes=1) < event_time - datetime.datetime.now() < datetime.timedelta(minutes=1)):
+        raise NotFreshException
