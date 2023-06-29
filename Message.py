@@ -3,8 +3,6 @@ import Resources
 
 class Message:
 
-    source_rsa_pk: str # for undeniability
-
     def __init__(self, message_type: str, source_username, target_username, seq, signature, text):
         self.message_type = message_type
         self.source_username = source_username
@@ -12,6 +10,7 @@ class Message:
         self.seq = seq
         self.signature = signature
         self.text = text
+        self. source_rsa_pk: str = ""  # for undeniability
 
     def __str__(self):
         return f"{self.message_type}{Resources.SEP}" \

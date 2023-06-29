@@ -1,6 +1,5 @@
 import random
 import socket
-import time
 
 import AES
 import RSA
