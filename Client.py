@@ -165,6 +165,7 @@ def x3dh_key_exchange(target_user: User, seq=0) -> bool:
     chat = chats[target_user.username]
     chat.root_key = SK
     chat.DH_key = ElGamal.DH_key(target_user.prekey_pk, client_user.prekey_pr)
+    chat.our_pr = client_user.prekey_pr
     chat.their_pk = target_user.prekey_pk
 
     new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
@@ -227,25 +228,28 @@ def send_message(chat: Chat, text):
 
     if chat.messages[-1].source_username != client_user.username:
         # TODO: new keys
-        # new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
-        # chat.root_key = new_root_key
-        pass
+        private_key, public_key = ElGamal.gen_key()
 
+        if send_message_to_server(chat, "dr_pk", str(public_key)):
+            chat.our_pr = private_key
+            chat.DH_key = ElGamal.DH_key(chat.their_pk, private_key)
+            chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
+
+    return send_message_to_server(chat, "text", text)
+
+
+def send_message_to_server(chat, message_type, text):
     new_message_key, the_ultimate_key = chat.KDF(chat.DH_key, chat.message_key)
     chat.message_key = new_message_key
-
-    message_obj = Message(message_type="text",
+    message_obj = Message(message_type=message_type,
                           source_username=client_user.username,
                           target_username=chat.username,
                           seq=chat.seq,
                           signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text)
-
     chats[chat.username].append_message(message_obj)
-
     message_obj = copy.deepcopy(message_obj)
-    message_obj.text = AES.encrypt(text, the_ultimate_key)
-
+    message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
     request = str(message_obj)
     send_to_server(request, sign=True)
     response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
@@ -273,6 +277,12 @@ def receive_message(chat: Chat, message_obj: Message):
     except InvalidSignature:
         return
 
+    # update the keys for "dr_pk" control message
+    if chat.messages[-1].source_username != message_obj.source_username:
+        chat.their_pk = int(message_obj.text)
+        chat.DH_key = ElGamal.DH_key(chat.their_pk, chat.our_pr)
+        chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
+
     chat.append_message(message_obj)
 
 
@@ -289,8 +299,8 @@ def fetch_messages():
     new_messages_lists.sort(key=lambda x: x[3])
 
     for message in new_messages:
-        _type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=6 - 1)
-        message_obj = Message(message_type=_type,
+        message_type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=6 - 1)
+        message_obj = Message(message_type=message_type,
                               source_username=source_username,
                               target_username=target_username,
                               seq=seq,
@@ -299,7 +309,7 @@ def fetch_messages():
 
         retrieve_keys(source_username)
 
-        if _type == "x3dh":
+        if message_type == "x3dh":
             SK = x3dh_extract_key(text)
 
             if source_username not in chats:
@@ -311,12 +321,18 @@ def fetch_messages():
             their_prekey_pk = get_user_by_chat(chat).prekey_pk
             chat.root_key = SK
             chat.DH_key = ElGamal.DH_key(their_prekey_pk, client_user.prekey_pr)
+            chat.our_pr = client_user.prekey_pr
             chat.their_pk = their_prekey_pk
 
             new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
             chat.root_key = new_root_key
             chat.message_key = message_key
-        elif _type == "text":
+
+        elif message_type == "dr_pk":
+            chat = chats[source_username]
+            receive_message(chat, message_obj)
+
+        elif message_type == "text":
             chat = chats[source_username]
             receive_message(chat, message_obj)
 
@@ -325,7 +341,7 @@ def print_chat(chat: Chat):
     for message in chat.messages:
         if message.message_type == "x3dh":
             print(f"{message.source_username} has started a secret chat.")
-        else:
+        elif message.message_type == "text":
             print(f"{message.source_username}: {message.text}")
 
 

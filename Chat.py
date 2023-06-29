@@ -9,6 +9,7 @@ class Chat:
     root_key: str = ""
     message_key: str = ""
     DH_key: int = 0
+    our_pr: int = 0
     their_pk: int = 0
 
     def __init__(self, username):

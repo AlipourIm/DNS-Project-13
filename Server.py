@@ -219,6 +219,8 @@ def client_handler(client, address):
                 save_message(client, buffer)
             elif arr[0] == "text":
                 save_message(client, buffer)
+            elif arr[0] == "dr_pk":
+                save_message(client, buffer)
             elif arr[0] == "fetch":
                 fetch_messages(client, user)
 
