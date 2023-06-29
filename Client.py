@@ -307,20 +307,25 @@ def send_message(chat: Chat, text):
 
 def send_message_to_server(chat, message_type, text):
     new_message_key, the_ultimate_key = chat.KDF(chat.DH_key, chat.message_key)
-    chat.message_key = new_message_key
+
     message_obj = Message(message_type=message_type,
                           source_username=client_user.username,
                           target_username=chat.username,
                           seq=chat.seq,
                           signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text)
-    chats[chat.username].append_message(message_obj)
+
     message_obj = copy.deepcopy(message_obj)
     message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
     request = str(message_obj)
     send_to_server(request, sign=True)
     response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
-    return response[0] == "200"
+    if response[0] == "200":
+        chats[chat.username].append_message(message_obj)
+        chat.message_key = new_message_key
+        return True
+    else:
+        return False
 
 
 def get_user_by_chat(chat: Chat):
