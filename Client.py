@@ -619,6 +619,7 @@ def group_menu(group: Group):
               "  2: send <message>\n"
               "  3: verify keys\n"
               "  4: add <username>\n"
+              "  5: remove <username>\n"
               "  5: list members\n"
               "  6: back")
         command = input("  > ").split()
@@ -631,9 +632,13 @@ def group_menu(group: Group):
         elif command[0] == "send":
             send_group_message(group, "group_text", ' '.join(command[1:]))
         elif command[0] == "verify":
+            # TODO
             verify_group_keys(group)
         elif command[0] == "add":
             add_member_to_group(group, command[1])
+        elif command[0] == "remove":
+            # TODO
+            pass
         elif command[0] == "list":
             list_group_members(group)
         elif command[0] == "back":
