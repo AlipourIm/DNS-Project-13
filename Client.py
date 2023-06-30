@@ -399,7 +399,8 @@ def receive_message(chat: Chat, message_obj: Message):
     # check the message sign
     user = get_user_by_chat(chat)
     try:
-        RSA.verify_signature(str(message_obj.seq) + message_obj.text, message_obj.signature, RSA.pem_to_public_key(user.rsa_pk))
+        RSA.verify_signature(str(message_obj.seq) + message_obj.text, message_obj.signature,
+                             RSA.pem_to_public_key(user.rsa_pk))
     except InvalidSignature:
         return
 
