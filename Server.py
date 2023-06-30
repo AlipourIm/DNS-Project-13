@@ -8,6 +8,7 @@ from typing import List, Dict
 
 import RSA
 import SecureSocket
+from Group import Group
 from Message import Message
 from User import User
 from PrettyLogger import logger_config
@@ -15,6 +16,7 @@ import Resources
 
 log = logger_config("webserver")
 users: List[User] = []
+groups: List[Group] = []
 messages: Dict[str, List[Message]] = {}
 server_private_key = None
 
@@ -58,14 +60,23 @@ def response_client(client_socket: socket.socket, response):
     log.info(f"message to client: {response.encode('ASCII')}")
 
 
-def register_new_user(client_socket: socket.socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
+def username_exists(username: str) -> bool:
     for user in users:
         if user.username == username:
-            response = f"400{Resources.SEP}" \
-                       f"Bad Request{Resources.SEP}" \
-                       f"Username already exists"
-            response_client(client_socket, response)
-            return
+            return True
+    for group in groups:
+        if group.group_name == username:
+            return True
+    return False
+
+
+def register_new_user(client_socket: socket.socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
+    if username_exists(username):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
 
     new_user = User(username, password_hash, rsa_pk, elgamal_pk, prekey_pk)
     users.append(new_user)
@@ -148,10 +159,12 @@ def retrieve_keys(client_socket: socket.socket, username: str):
 
 
 def save_message(client_socket: socket.socket, message: str):
-    _type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=6-1)
+    _type, source_username, target_username, target_group, seq, signature, text = message.\
+        split(Resources.SEP, maxsplit=7-1)
     message_obj = Message(message_type=_type,
                           source_username=source_username,
                           target_username=target_username,
+                          target_group=target_group,
                           seq=seq,
                           signature=signature,
                           text=text)
@@ -182,6 +195,24 @@ def fetch_messages(client_socket: socket.socket, user: User):
     buffer = receive_from_client(client_socket, user)
     if buffer == "ack":
         messages[user.username] = []
+
+
+def create_group(client_socket: socket.socket, user: User, group_name: str):
+    if username_exists(group_name):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
+
+    group = Group(user.username, group_name)
+    groups.append(group)
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Group created successfully"
+    response_client(client_socket, response)
+
+
 
 
 def client_handler(client, address):
@@ -215,8 +246,12 @@ def client_handler(client, address):
                 save_message(client, buffer)
             elif arr[0] == "dr_pk":
                 save_message(client, buffer)
+            elif arr[0] == "group_text":
+                save_message(client, buffer)
             elif arr[0] == "fetch":
                 fetch_messages(client, user)
+            elif arr[0] == "create":
+                create_group(client, user, arr[1])
 
     except (KeyboardInterrupt, IndexError):
         client.close()

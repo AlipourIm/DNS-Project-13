@@ -14,6 +14,7 @@ import RSA
 import Resources
 import SecureSocket
 from Chat import Chat
+from Group import Group
 from Message import Message
 from User import User
 from PrettyLogger import logger_config
@@ -24,37 +25,71 @@ log = logger_config("client")
 https_socket: socket.socket
 client_user: Optional[User] = None
 users: List[User] = []
+groups: Dict[str, Group] = {}
 # messages: Dict[str, List[Message]] = {}
 chats: Dict[str, Chat] = {}
 server_public_key = None
 
 
+def dump_chat(chat):
+    dumped_chat = {"root_key": chat.root_key,
+                   "message_key": chat.message_key,
+                   "DH_key": chat.DH_key,
+                   "our_pr": chat.our_pr,
+                   "their_pk": chat.their_pk,
+                   "seq": chat.seq,
+                   "username": chat.username,
+                   "messages": []}
+    for message in chat.messages:
+        dumped_chat["messages"].append({"source_rsa_pk": message.source_rsa_pk,
+                                        "message_type": message.message_type,
+                                        "source_username": message.source_username,
+                                        "target_username": message.target_username,
+                                        "seq": message.seq, "signature": message.signature,
+                                        "text": message.text,
+                                        "target_group": message.target_group
+                                        })
+    return dumped_chat
+
+
+def load_chat(dumped_chat):
+    username = dumped_chat["username"]
+    chat = Chat(username)
+    chat.root_key = dumped_chat["root_key"]
+    chat.message_key = dumped_chat["message_key"]
+    chat.DH_key = dumped_chat["DH_key"]
+    chat.our_pr = dumped_chat["our_pr"]
+    chat.their_pk = dumped_chat["their_pk"]
+    chat.seq = dumped_chat["seq"]
+    chat.messages = []
+    for message in dumped_chat["messages"]:
+        new_message = Message(message["message_type"], message["source_username"], message["target_username"],
+                              message["seq"], message["signature"], message["text"], message["target_group"])
+        new_message.source_rsa_pk = message["source_rsa_pk"]
+        chat.messages.append(new_message)
+    return chat
+
+
 def save_to_db():
-    db = {"users": [], "chats": []}
+    db = {"users": [], "chats": [], "groups": []}
     for user in users:
         new_user = {"rsa_pk": user.rsa_pk, "elgamal_pk": user.elgamal_pk, "prekey_pk": user.prekey_pk,
                     "username": user.username}
         db["users"].append(new_user)
+
     for username in chats:
         chat = chats[username]
-        new_chat = {"root_key": chat.root_key,
-                    "message_key": chat.message_key,
-                    "DH_key": chat.DH_key,
-                    "our_pr": chat.our_pr,
-                    "their_pk": chat.their_pk,
-                    "seq": chat.seq,
-                    "username": chat.username,
-                    "messages": []}
+        dumped_chat = dump_chat(chat)
+        db["chats"].append(dumped_chat)
 
-        for message in chat.messages:
-            new_chat["messages"].append({"source_rsa_pk": message.source_rsa_pk,
-                                         "message_type": message.message_type,
-                                         "source_username": message.source_username,
-                                         "target_username": message.target_username,
-                                         "seq": message.seq, "signature": message.signature,
-                                         "text": message.text
-                                         })
-        db["chats"].append(new_chat)
+    for group_name in groups:
+        group = groups[group_name]
+        dumped_group = {"admin_username": group.admin_username,
+                        "group_name": group_name,
+                        "usernames": group.usernames}
+        new_chat = dump_chat(group.chat)
+        dumped_group["chat"] = new_chat
+        db["groups"].append(dumped_group)
 
     with open(f"./user/{client_user.username}/{client_user.username}_db.imal", 'wb') as db_file:
         content = json.dumps(db)
@@ -72,26 +107,21 @@ def load_db(username, password_hash):
         content = AES.decrypt(db_encrypted, aes_key, AES.default_iv)
         db = json.loads(content)
 
-    for user in db["users"]:
-        new_user = User(user["username"], user["rsa_pk"], "", user["elgamal_pk"], user["prekey_pk"])
-        users.append(new_user)
+    for dumped_user in db["users"]:
+        user = User(dumped_user["username"], dumped_user["rsa_pk"], "",
+                    dumped_user["elgamal_pk"], dumped_user["prekey_pk"])
+        users.append(user)
 
-    for chat in db["chats"]:
-        username = chat["username"]
-        chats[username] = Chat(username)
-        chats[username].root_key = chat["root_key"]
-        chats[username].message_key = chat["message_key"]
-        chats[username].DH_key = chat["DH_key"]
-        chats[username].our_pr = chat["our_pr"]
-        chats[username].their_pk = chat["their_pk"]
-        chats[username].seq = chat["seq"]
-        chats[username].messages = []
+    for dumped_chat in db["chats"]:
+        chat = load_chat(dumped_chat)
+        chats[chat.username] = chat
 
-        for message in chat["messages"]:
-            new_message = Message(message["message_type"], message["source_username"], message["target_username"],
-                                  message["seq"], message["signature"], message["text"])
-            new_message.source_rsa_pk = message["source_rsa_pk"]
-            chats[username].messages.append(new_message)
+    for dumped_group in db["groups"]:
+        print("loading group...")
+        group = Group(dumped_group["admin_username"], dumped_group["group_name"])
+        group.usernames = dumped_group["usernames"]
+        group.chat = load_chat(dumped_group["chat"])
+        groups[group.group_name] = group
 
 
 def establish_HTTPS_connection() -> socket.socket:
@@ -289,12 +319,11 @@ def retrieve_keys(username: str):
         return False
 
 
-def send_message(chat: Chat, text):
+def send_message(chat: Chat, message_type, text, target_group=""):
     print(f"sending \"{text}\" to {chat.username}...")
     fetch_messages()
 
     if chat.messages[-1].source_username != client_user.username:
-        # TODO: new keys
         private_key, public_key = ElGamal.gen_key()
 
         if send_message_to_server(chat, "dr_pk", str(public_key)):
@@ -302,10 +331,30 @@ def send_message(chat: Chat, text):
             chat.DH_key = ElGamal.DH_key(chat.their_pk, private_key)
             chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
 
-    return send_message_to_server(chat, "text", text)
+    return send_message_to_server(chat, message_type, text, target_group)
 
 
-def send_message_to_server(chat, message_type, text):
+def send_group_message(group: Group, text):
+    print(f"sending \"{text}\" to {group.group_name}...")
+    fetch_messages()
+
+    message_obj = Message(message_type="group_text",
+                          source_username=client_user.username,
+                          target_username=client_user.username,
+                          seq=0,
+                          signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          text=text,
+                          target_group=group.group_name)
+
+    group.chat.append_message(message_obj)
+
+    for username in group.usernames:
+        if username != client_user.username:
+            open_chat(username)
+            send_message(chats[username], "group_text", text, group.group_name)
+
+
+def send_message_to_server(chat, message_type, text, target_group=""):
     new_message_key, the_ultimate_key = chat.KDF(chat.DH_key, chat.message_key)
 
     message_obj = Message(message_type=message_type,
@@ -313,7 +362,8 @@ def send_message_to_server(chat, message_type, text):
                           target_username=chat.username,
                           seq=chat.seq,
                           signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
-                          text=text)
+                          text=text,
+                          target_group=target_group)
 
     encrypted_message_obj = copy.deepcopy(message_obj)
     encrypted_message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
@@ -356,6 +406,7 @@ def receive_message(chat: Chat, message_obj: Message):
         chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
 
     chat.append_message(message_obj)
+    return message_obj
 
 
 def fetch_messages():
@@ -371,10 +422,12 @@ def fetch_messages():
     new_messages_lists.sort(key=lambda x: x[3])
 
     for message in new_messages:
-        message_type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=5)
+        message_type, source_username, target_username, target_group, seq, signature, text = message. \
+            split(Resources.SEP, maxsplit=7 - 1)
         message_obj = Message(message_type=message_type,
                               source_username=source_username,
                               target_username=target_username,
+                              target_group=target_group,
                               seq=seq,
                               signature=signature,
                               text=text)
@@ -408,12 +461,24 @@ def fetch_messages():
             chat = chats[source_username]
             receive_message(chat, message_obj)
 
+        elif message_type == "group_text":
+            chat = chats[source_username]
+            message_obj = receive_message(chat, message_obj)
+            group = groups[message_obj.target_group]
+            group.chat.append_message(message_obj)
+
 
 def print_chat(chat: Chat):
     for message in chat.messages:
         if message.message_type == "x3dh":
             print(f"{message.source_username} has started a secret chat.")
         elif message.message_type == "text":
+            print(f"{message.source_username}: {message.text}")
+
+
+def print_group(group: Group):
+    for message in group.chat.messages:
+        if message.message_type == "group_text":
             print(f"{message.source_username}: {message.text}")
 
 
@@ -425,9 +490,6 @@ def open_chat(username: str) -> bool:
     fetch_messages()
 
     if username in chats:
-        chat = chats[username]
-        print_chat(chat)
-
         return True
 
     # Let's do the magic!
@@ -436,7 +498,6 @@ def open_chat(username: str) -> bool:
             if user.username == username:
                 chats[user.username] = Chat(user.username)
                 x3dh_key_exchange(user)
-                print_chat(chats[user.username])
         return True
 
     return False
@@ -464,12 +525,63 @@ def chat_menu(chat: Chat):
             continue
         if command[0] == "refresh":
             fetch_messages()
-            print_chat(chat
-                       )
+            print_chat(chat)
         elif command[0] == "send":
-            send_message(chat, ' '.join(command[1:]))
+            send_message(chat, "text", ' '.join(command[1:]))
         elif command[0] == "verify":
             verify_keys(chat)
+        elif command[0] == "back":
+            return
+        else:
+            print("Wrong command!")
+
+
+def create_group(group_name: str):
+    request = f"create{Resources.SEP}{group_name}"
+    send_to_server(request, sign=True)
+    response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
+    if response[0] == "200":
+        group = Group(client_user.username, group_name)
+        groups[group_name] = group
+        print(response[2])
+
+
+def open_group(group_name: str) -> bool:
+    if group_name in chats:
+        print("This username belong to a user, not a group.")
+        return False
+
+    fetch_messages()
+
+    if group_name in groups:
+        return True
+
+    else:
+        print("The group does not exist")
+        return False
+
+
+def group_menu(group: Group):
+    while True:
+        input("Press Enter to continue...")
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print(f"Welcome {client_user.username}.")
+        print(f"Group: {group.group_name}\n")
+        print("  1: refresh\n"
+              "  2: send <message>\n"
+              "  3: verify keys\n"
+              "  4: back")
+        command = input("  > ").split()
+        print()
+        if len(command) == 0:
+            continue
+        if command[0] == "refresh":
+            fetch_messages()
+            print_group(group)
+        elif command[0] == "send":
+            send_group_message(group, ' '.join(command[1:]))
+        elif command[0] == "verify":
+            verify_group_keys(group)
         elif command[0] == "back":
             return
         else:
@@ -483,8 +595,8 @@ def user_menu():
         print(f"Welcome {client_user.username}.\n")
         print("  1: show users list\n"
               "  2: open chat <username>\n"
-              "  3: open group <group_name>\n"
-              "  4: create group <group_name>\n"
+              "  3: create group <group_name>\n"
+              "  4: open group <group_name>\n"
               "  5: logout")
         command = input("  > ").split()
         print()
@@ -495,11 +607,11 @@ def user_menu():
         elif command[0] == "open" and command[1] == "chat":
             if open_chat(command[2]):
                 chat_menu(chats[command[2]])
-                pass
-        elif command[0] == "open" and command[1] == "group":
-            pass
         elif command[0] == "create":
-            pass
+            create_group(command[2])
+        elif command[0] == "open" and command[1] == "group":
+            if open_group(command[2]):
+                group_menu(groups[command[2]])
         elif command[0] == "logout":
             logout()
             return
