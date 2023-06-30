@@ -9,4 +9,4 @@ class Group:
         self.admin_username = admin_username
         self.group_name = group_name
         self.chat = Chat(group_name)
-        self.usernames: List[str] = []
+        self.usernames: List[str] = [admin_username]

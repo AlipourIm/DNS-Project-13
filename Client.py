@@ -229,7 +229,11 @@ def retrieve_usernames_from_server():
     message = f"show users list"
     send_to_server(message, True)
     response = receive_from_server().split(Resources.SEP)
-    print(response[2])
+    return response[2]
+
+
+def show_users_list():
+    print(retrieve_usernames_from_server())
 
 
 def logout():
@@ -276,7 +280,7 @@ def x3dh_key_exchange(target_user: User, seq=0) -> bool:
                           source_username=client_user.username,
                           target_username=target_user.username,
                           seq=seq,
-                          signature=RSA.sign(initial_message, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          signature=RSA.sign(str(seq) + initial_message, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=initial_message)
 
     chats[target_user.username].append_message(message_obj)
@@ -334,7 +338,7 @@ def send_message(chat: Chat, message_type, text, target_group=""):
     return send_message_to_server(chat, message_type, text, target_group)
 
 
-def send_group_message(group: Group, text):
+def send_group_message(group: Group, message_type, text):
     print(f"sending \"{text}\" to {group.group_name}...")
     fetch_messages()
 
@@ -342,7 +346,7 @@ def send_group_message(group: Group, text):
                           source_username=client_user.username,
                           target_username=client_user.username,
                           seq=0,
-                          signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          signature=RSA.sign(str(0) + text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text,
                           target_group=group.group_name)
 
@@ -351,7 +355,7 @@ def send_group_message(group: Group, text):
     for username in group.usernames:
         if username != client_user.username:
             open_chat(username)
-            send_message(chats[username], "group_text", text, group.group_name)
+            send_message(chats[username], message_type, text, group.group_name)
 
 
 def send_message_to_server(chat, message_type, text, target_group=""):
@@ -361,7 +365,7 @@ def send_message_to_server(chat, message_type, text, target_group=""):
                           source_username=client_user.username,
                           target_username=chat.username,
                           seq=chat.seq,
-                          signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          signature=RSA.sign(str(chat.seq) + text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text,
                           target_group=target_group)
 
@@ -395,7 +399,7 @@ def receive_message(chat: Chat, message_obj: Message):
     # check the message sign
     user = get_user_by_chat(chat)
     try:
-        RSA.verify_signature(message_obj.text, message_obj.signature, RSA.pem_to_public_key(user.rsa_pk))
+        RSA.verify_signature(str(message_obj.seq) + message_obj.text, message_obj.signature, RSA.pem_to_public_key(user.rsa_pk))
     except InvalidSignature:
         return
 
@@ -432,7 +436,8 @@ def fetch_messages():
                               signature=signature,
                               text=text)
 
-        retrieve_keys(source_username)
+        if message_type not in ["add", "join"]:
+            retrieve_keys(source_username)
 
         if message_type == "x3dh":
             SK = x3dh_extract_key(text)
@@ -467,19 +472,37 @@ def fetch_messages():
             group = groups[message_obj.target_group]
             group.chat.append_message(message_obj)
 
+        elif message_type == "add":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            new_member_username, group_name = text.split(Resources.SEP)
+            groups[group_name].usernames.append(new_member_username)
+
+        elif message_type == "join":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            admin_username, group_name, dumped_usernames = text.split(Resources.SEP)
+            group = Group(admin_username, group_name)
+            group.usernames = json.loads(dumped_usernames)
+            groups[group.group_name] = group
+
 
 def print_chat(chat: Chat):
     for message in chat.messages:
         if message.message_type == "x3dh":
             print(f"{message.source_username} has started a secret chat.")
         elif message.message_type == "text":
-            print(f"{message.source_username}: {message.text}")
+            print(f"{message.source_username}:\t{message.text}")
 
 
 def print_group(group: Group):
     for message in group.chat.messages:
         if message.message_type == "group_text":
-            print(f"{message.source_username}: {message.text}")
+            print(f"{message.source_username}:\t{message.text}")
 
 
 def open_chat(username: str) -> bool:
@@ -544,6 +567,9 @@ def create_group(group_name: str):
         group = Group(client_user.username, group_name)
         groups[group_name] = group
         print(response[2])
+        return True
+
+    print(response[2])
 
 
 def open_group(group_name: str) -> bool:
@@ -561,6 +587,28 @@ def open_group(group_name: str) -> bool:
         return False
 
 
+def list_group_members(group: Group):
+    fetch_messages()
+
+    users_log = retrieve_usernames_from_server().split("\n")
+    for line in users_log:
+        username = line.split(" ")[1]
+        if username in group.usernames:
+            print(line)
+
+
+def add_member_to_group(group: Group, new_member_username: str):
+    fetch_messages()
+    message = f"add{Resources.SEP}{group.group_name}{Resources.SEP}{new_member_username}"
+    send_to_server(message, True)
+    response = receive_from_server().split(Resources.SEP)
+
+    if response[0] == "200":
+        group.usernames.append(new_member_username)
+
+    print(response[2])
+
+
 def group_menu(group: Group):
     while True:
         input("Press Enter to continue...")
@@ -570,7 +618,9 @@ def group_menu(group: Group):
         print("  1: refresh\n"
               "  2: send <message>\n"
               "  3: verify keys\n"
-              "  4: back")
+              "  4: add <username>\n"
+              "  5: list members\n"
+              "  6: back")
         command = input("  > ").split()
         print()
         if len(command) == 0:
@@ -579,9 +629,13 @@ def group_menu(group: Group):
             fetch_messages()
             print_group(group)
         elif command[0] == "send":
-            send_group_message(group, ' '.join(command[1:]))
+            send_group_message(group, "group_text", ' '.join(command[1:]))
         elif command[0] == "verify":
             verify_group_keys(group)
+        elif command[0] == "add":
+            add_member_to_group(group, command[1])
+        elif command[0] == "list":
+            list_group_members(group)
         elif command[0] == "back":
             return
         else:
@@ -603,12 +657,13 @@ def user_menu():
         if len(command) == 0:
             continue
         if command[0] == "show":
-            retrieve_usernames_from_server()
+            show_users_list()
         elif command[0] == "open" and command[1] == "chat":
             if open_chat(command[2]):
                 chat_menu(chats[command[2]])
         elif command[0] == "create":
-            create_group(command[2])
+            if create_group(command[2]):
+                group_menu(groups[command[2]])
         elif command[0] == "open" and command[1] == "group":
             if open_group(command[2]):
                 group_menu(groups[command[2]])
