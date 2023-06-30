@@ -315,9 +315,9 @@ def send_message_to_server(chat, message_type, text):
                           signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text)
 
-    message_obj = copy.deepcopy(message_obj)
-    message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
-    request = str(message_obj)
+    new_message_obj = copy.deepcopy(message_obj)
+    new_message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
+    request = str(new_message_obj)
     send_to_server(request, sign=True)
     response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
     if response[0] == "200":
