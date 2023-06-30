@@ -16,7 +16,7 @@ class SecureSocket(socket.socket):
         if self.aes_key == "":
             return self.raw_socket.send(__data)
         else:
-            data = (str(self.seq) + Resources.SEP + str(datetime.datetime.now())+ Resources.SEP).encode('ASCII') \
+            data = (str(self.seq) + Resources.SEP + str(datetime.datetime.now()) + Resources.SEP).encode('ASCII') \
                     + __data
             self.seq += 1
             return self.raw_socket.send(AES.encrypt_bytes(data, self.aes_key))
@@ -25,19 +25,23 @@ class SecureSocket(socket.socket):
         if self.aes_key == "":
             return self.raw_socket.recv(__bufsize)
         else:
-            data = AES.decrypt_bytes(self.raw_socket.recv(__bufsize), self.aes_key).split(Resources.SEP.encode("ASCII"), maxsplit=3 - 1)
-            seq = int(data[0])
-            timestamp = data[1].decode("ASCII")
+            raw_data = self.raw_socket.recv(__bufsize)
+
+            if len(raw_data) == 0:
+                return raw_data
+
+            arr = AES.decrypt_bytes(raw_data, self.aes_key).split(Resources.SEP.encode("ASCII"), maxsplit=3 - 1)
+            seq = int(arr[0])
+            timestamp = arr[1].decode("ASCII")
             try:
                 assert seq == self.seq
                 Resources.verify_timestamp(timestamp)
                 self.seq += 1
-                return data[2]
+                return arr[2]
             except (AssertionError, Resources.NotFreshException):
                 print("SecureSocket: Invalid packet received.")
                 print(seq, self.seq)
                 return self.recv(__bufsize)
-
 
     def establish_client(self, public_key):
         raw_key = str(random.randint(0, 10**6))

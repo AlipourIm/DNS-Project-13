@@ -4,7 +4,7 @@ import json
 import os
 import socket
 import time
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from cryptography.exceptions import InvalidSignature
 
@@ -22,7 +22,7 @@ import ssl
 log = logger_config("client")
 
 https_socket: socket.socket
-client_user: User
+client_user: Optional[User] = None
 users: List[User] = []
 # messages: Dict[str, List[Message]] = {}
 chats: Dict[str, Chat] = {}
@@ -315,9 +315,9 @@ def send_message_to_server(chat, message_type, text):
                           signature=RSA.sign(text, RSA.pem_to_private_key(client_user.rsa_pr)),
                           text=text)
 
-    new_message_obj = copy.deepcopy(message_obj)
-    new_message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
-    request = str(new_message_obj)
+    encrypted_message_obj = copy.deepcopy(message_obj)
+    encrypted_message_obj.text = AES.encrypt(message_obj.text, the_ultimate_key)
+    request = str(encrypted_message_obj)
     send_to_server(request, sign=True)
     response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
     if response[0] == "200":
@@ -371,7 +371,7 @@ def fetch_messages():
     new_messages_lists.sort(key=lambda x: x[3])
 
     for message in new_messages:
-        message_type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=6 - 1)
+        message_type, source_username, target_username, seq, signature, text = message.split(Resources.SEP, maxsplit=5)
         message_obj = Message(message_type=message_type,
                               source_username=source_username,
                               target_username=target_username,
@@ -452,22 +452,28 @@ def chat_menu(chat: Chat):
     while True:
         input("Press Enter to continue...")
         os.system('cls' if os.name == 'nt' else 'clear')
-        print(f"Welcome {client_user.username}.\n")
+        print(f"Welcome {client_user.username}.")
+        print(f"Recipient: {chat.username}\n")
         print("  1: refresh\n"
               "  2: send <message>\n"
               "  3: verify keys\n"
               "  4: back")
         command = input("  > ").split()
         print()
+        if len(command) == 0:
+            continue
         if command[0] == "refresh":
             fetch_messages()
-            print_chat(chat)
+            print_chat(chat
+                       )
         elif command[0] == "send":
             send_message(chat, ' '.join(command[1:]))
         elif command[0] == "verify":
             verify_keys(chat)
         elif command[0] == "back":
             return
+        else:
+            print("Wrong command!")
 
 
 def user_menu():
@@ -482,6 +488,8 @@ def user_menu():
               "  5: logout")
         command = input("  > ").split()
         print()
+        if len(command) == 0:
+            continue
         if command[0] == "show":
             retrieve_usernames_from_server()
         elif command[0] == "open" and command[1] == "chat":
@@ -508,6 +516,8 @@ def main_menu():
               "  2: login <username> <password>")
         command = input("  > ").split()
         print()
+        if len(command) == 0:
+            continue
         if command[0] == "register" and len(command) == 3:
             if register_new_user(command[1], command[2]):
                 user_menu()
@@ -523,5 +533,7 @@ if __name__ == "__main__":
     try:
         main_menu()
     finally:
-        save_to_db()
+        if client_user is not None:
+            save_to_db()
+            logout()
         https_socket.close()
