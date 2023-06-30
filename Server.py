@@ -271,15 +271,15 @@ def add_member_to_group(client_socket: socket.socket, user: User, group_name, ne
         return
 
     for old_member_username in group.usernames:
-        if old_member_username != user.username:
-            add_text = new_member_username + Resources.SEP + group.group_name
-            message_obj = Message(message_type="add",
-                                  source_username="",
-                                  target_username=old_member_username,
-                                  seq=0,
-                                  signature=RSA.sign(str(0) + add_text, server_private_key),
-                                  text=add_text)
-            messages[old_member_username].append(message_obj)
+        # if old_member_username != user.username:
+        add_text = new_member_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="add",
+                              source_username="",
+                              target_username=old_member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + add_text, server_private_key),
+                              text=add_text)
+        messages[old_member_username].append(message_obj)
 
     group.usernames.append(new_member_username)
 
@@ -295,6 +295,69 @@ def add_member_to_group(client_socket: socket.socket, user: User, group_name, ne
     response = f"200{Resources.SEP}" \
                f"OK{Resources.SEP}" \
                f"User added to group successfully."
+    response_client(client_socket, response)
+    return
+
+
+def remove_member_from_group(client_socket: socket.socket, user: User, group_name, to_be_removed_username):
+    # check if group exists
+    if group_name not in groups:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"Group does not exist."
+        response_client(client_socket, response)
+        return
+
+    group = groups[group_name]
+
+    # check if sender of remove request is member of the group
+    if user.username not in group.usernames:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if sender of remove request is admin of the group
+    if user.username != group.admin_username:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not the admin of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user exists
+    if to_be_removed_username not in [user.username for user in users]:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User does not exist."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user is already in the group
+    if to_be_removed_username not in group.usernames:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User is not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    for member_username in group.usernames:
+        # if member_username != user.username:
+        remove_text = to_be_removed_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="remove",
+                              source_username="",
+                              target_username=member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + remove_text, server_private_key),
+                              text=remove_text)
+        messages[member_username].append(message_obj)
+
+    group.usernames.remove(to_be_removed_username)
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User removed from group successfully."
     response_client(client_socket, response)
     return
 
@@ -338,6 +401,8 @@ def client_handler(client, address):
                 create_group(client, user, arr[1])
             elif arr[0] == "add":
                 add_member_to_group(client, user, arr[1], arr[2])
+            elif arr[0] == "remove":
+                remove_member_from_group(client, user, arr[1], arr[2])
 
     except (KeyboardInterrupt, IndexError):
         client.close()

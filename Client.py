@@ -350,12 +350,11 @@ def send_group_message(group: Group, message_type, text):
                           text=text,
                           target_group=group.group_name)
 
-    group.chat.append_message(message_obj)
-
     for username in group.usernames:
         if username != client_user.username:
             open_chat(username)
-            send_message(chats[username], message_type, text, group.group_name)
+            if send_message(chats[username], message_type, text, group.group_name):
+                group.chat.append_message(message_obj)
 
 
 def send_message_to_server(chat, message_type, text, target_group=""):
@@ -379,6 +378,7 @@ def send_message_to_server(chat, message_type, text, target_group=""):
         chat.message_key = new_message_key
         return True
     else:
+        print(response[2])
         return False
 
 
@@ -437,7 +437,7 @@ def fetch_messages():
                               signature=signature,
                               text=text)
 
-        if message_type not in ["add", "join"]:
+        if message_type not in ["add", "join", "remove"]:
             retrieve_keys(source_username)
 
         if message_type == "x3dh":
@@ -480,6 +480,7 @@ def fetch_messages():
                 continue
             new_member_username, group_name = text.split(Resources.SEP)
             groups[group_name].usernames.append(new_member_username)
+            groups[group_name].chat.append_message(message_obj)
 
         elif message_type == "join":
             try:
@@ -487,9 +488,20 @@ def fetch_messages():
             except InvalidSignature:
                 continue
             admin_username, group_name, dumped_usernames = text.split(Resources.SEP)
-            group = Group(admin_username, group_name)
-            group.usernames = json.loads(dumped_usernames)
-            groups[group.group_name] = group
+            if group_name not in groups:
+                group = Group(admin_username, group_name)
+                groups[group.group_name] = group
+            groups[group_name].usernames = json.loads(dumped_usernames)
+            groups[group_name].chat.append_message(message_obj)
+
+        elif message_type == "remove":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            removed_member_username, group_name = text.split(Resources.SEP)
+            groups[group_name].usernames.remove(removed_member_username)
+            groups[group_name].chat.append_message(message_obj)
 
 
 def print_chat(chat: Chat):
@@ -504,6 +516,20 @@ def print_group(group: Group):
     for message in group.chat.messages:
         if message.message_type == "group_text":
             print(f"{message.source_username}:\t{message.text}")
+
+        elif message.message_type == "add":
+            admin_name = group.admin_username
+            admin_name = "you" if admin_name == client_user.username else admin_name
+            print(f"{admin_name} added {message.text.split(Resources.SEP)[0]} to this group.")
+
+        elif message.message_type == "join":
+            print(f"{group.admin_username} added you to this group.")
+
+        elif message.message_type == "remove":
+            admin_name = group.admin_username if group.admin_username != client_user.username else "you"
+            member_name = message.text.split(Resources.SEP)[0]
+            member_name = "you" if member_name == client_user.username else member_name
+            print(f"{admin_name} removed {member_name} from this group.")
 
 
 def open_chat(username: str) -> bool:
@@ -530,7 +556,7 @@ def open_chat(username: str) -> bool:
 def verify_keys(chat: Chat):
     fetch_messages()
     print("To verify the conversation is end-to-end encrypted, compare the following hash of keys with your friend's:")
-    print(Resources.get_hash(chat.message_key)[:10])
+    print(Resources.get_hash(chat.message_key)[:5])
 
 
 def chat_menu(chat: Chat):
@@ -604,10 +630,28 @@ def add_member_to_group(group: Group, new_member_username: str):
     send_to_server(message, True)
     response = receive_from_server().split(Resources.SEP)
 
-    if response[0] == "200":
-        group.usernames.append(new_member_username)
+    print(response[2])
+
+
+def remove_member_from_group(group: Group, member_username: str):
+    fetch_messages()
+    message = f"remove{Resources.SEP}{group.group_name}{Resources.SEP}{member_username}"
+    send_to_server(message, True)
+    response = receive_from_server().split(Resources.SEP)
 
     print(response[2])
+
+
+def verify_group_keys(group: Group):
+    fetch_messages()
+    print(
+        "To verify the conversation is end-to-end encrypted, compare the following hashes of keys with your friends':")
+    for username in group.usernames:
+        if username != client_user.username:
+            try:
+                print(username + ": " + Resources.get_hash(chats[username].message_key)[:5])
+            except KeyError:
+                print(username + ": " + "none")
 
 
 def group_menu(group: Group):
@@ -638,8 +682,7 @@ def group_menu(group: Group):
         elif command[0] == "add":
             add_member_to_group(group, command[1])
         elif command[0] == "remove":
-            # TODO
-            pass
+            remove_member_from_group(group, command[1])
         elif command[0] == "list":
             list_group_members(group)
         elif command[0] == "back":

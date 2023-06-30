@@ -11,7 +11,7 @@ class Message:
         self.seq = seq
         self.signature = signature
         self.text = text
-        self. source_rsa_pk: str = ""  # TODO: for undeniability
+        self.source_rsa_pk: str = ""
 
     def __str__(self):
         return f"{self.message_type}{Resources.SEP}" \

@@ -1,4 +1,5 @@
 import random
+import secrets
 
 import Resources
 
@@ -27,8 +28,8 @@ def gcd(a, b):
         return gcd(b, a % b)
 
 
-def gen_key(username=None, password=None, keyname="elgamal"):  # TODO: use cryptography library for random key generation
-    private_key = random.randint(10 ** 20, q)
+def gen_key(username=None, password=None, keyname="elgamal"):
+    private_key = secrets.randbelow(q - 10 ** 20) + 10 ** 20
     while gcd(q, private_key) != 1:
         private_key = random.randint(10 ** 20, q)
     public_key = power(alpha, private_key, q)
