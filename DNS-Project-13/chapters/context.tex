@@ -1,0 +1,1535 @@
+‫
+‫% -------------------------------------------------------
+‫%  Abstract
+‫% -------------------------------------------------------
+\newif\iffigure
+\figuretrue
+
+‫\شروع{وسط‌چین}
+‫\مهم{چکیده}
+‫\پایان{وسط‌چین}
+‫\بدون‌تورفتگی
+‫
+‫در این پروژه قصد داریم تا یک پیام‌رسان امن ایجاد کنیم. این پیام‌رسان امن ارتباط بین کلاینت‌ها را به صورت انتها به انتها رمز خواهد کرد. همچنین دارای محرمانگی پیشرو و محرمانی آینده خواهد بود. همچنین تمامی پیام‌ها امضا و \لر{sequence number} خواهند داشت تا انواع حملات ممکن بر پروتکل شکست بخورند. روش تبادل کلید پیاده‌سازی شده‌ی ما امکان ایجاد کلید بین یک فرد با یک فرد آفلاین را نیز می‌دهد.
+‫
+‫این پیامرسان همچنین امکان ایجاد و مدیریت گروه را به سازنده‌ی گروه می‌دهد. تمامی اعضای گروه امکان ارسال پیام در گروه را دارند و اگر کسی از گروه حذف بشود امکان دریافت و یا رمزگشایی پیام‌های گروه را نخواهد داشت.
+‫
+‫
+‫\بدون‌تورفتگی \مهم{واژه‌های کلیدی}: \lr{Client, Server, End-to-End encryption}
+‫
+‫\صفحه‌جدید
+‫ 
+‫\section{نیازمندی‌های سمت کلاینت}
+‫پروتکل پیاده‌سازی شده توسط ما در بسیاری از بخش‌ها از پروتکل سیگنال الهام گرفته شده است. ~\مرجع{signal}
+‫
+‫در این بخش از ابتدای شروع پروتکل، اقدام به توضیح مراحل پیاده‌سازی آن می‌کنیم.
+‫\subsection{ارتباط ابتدایی کلاینت و سرور}
+‫برای برقراری ارتباط امن بین کلاینت و سرور، ابتدا فرض کرده‌ایم که کلاینت دارای کلید عمومی سرور می‌باشد. هنگام ارتباط ابتدا یک رپر سوکت نوشته‌این که باعث می‌شود کلاینت و سرور با هم هنگام اتصال یک کلید نامتقارن ست کنند. برای ست کردن این کلید، کلاینت ابتدا با کلید عمومی سرور آن را احراز اصالت می‌کند و سپس پارامتر‌هایی تبادل می‌کنند تا یک کلید متقارن برای جلسه بینشان ست بشود. حال از این پس با استفاده از این کلید متقارن با هم ارتباط برقرار خواهند کرد. همچنین هر پیام را با دخالت دادن یک شماره‌ی زیادشونده و همچنین یک برچسب زمانی، رمز می‌کنند و در طرف دیگر تازگی پیام‌ها و صحت شماره بررسی می‌شود و در صورت عدم صحبت بسته رد می‌شود.
+‫
+‫خروجی این مرحله یک سوکت امن است و برای همین اسم آن را \لر{Secure Socket} گذاشتیم. پس از این مرحله هیچگونه امکان حمله‌ی تکرار و ارسال پیام از طرف جازدن خود به جای فرد دیگر وجود نخواهد داشت.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=Python]
+import random
+import socket
+import datetime
+
+import AES
+import RSA
+import Resources
+
+
+class SecureSocket(socket.socket):
+    seq: int = 0
+    aes_key: str = ""
+    raw_socket: socket.socket
+
+    def send(self, __data: bytes, __flags: int = ...) -> int:
+        if self.aes_key == "":
+            return self.raw_socket.send(__data)
+        else:
+            data = (str(self.seq) + Resources.SEP + str(datetime.datetime.now()) + Resources.SEP).encode('ASCII') \
+                    + __data
+            self.seq += 1
+            return self.raw_socket.send(AES.encrypt_bytes(data, self.aes_key))
+
+    def recv(self, __bufsize: int, __flags: int = ...) -> bytes:
+        if self.aes_key == "":
+            return self.raw_socket.recv(__bufsize)
+        else:
+            raw_data = self.raw_socket.recv(__bufsize)
+
+            if len(raw_data) == 0:
+                return raw_data
+
+            arr = AES.decrypt_bytes(raw_data, self.aes_key).split(Resources.SEP.encode("ASCII"), maxsplit=3 - 1)
+            seq = int(arr[0])
+            timestamp = arr[1].decode("ASCII")
+            try:
+                assert seq == self.seq
+                Resources.verify_timestamp(timestamp)
+                self.seq += 1
+                return arr[2]
+            except (AssertionError, Resources.NotFreshException):
+                print("SecureSocket: Invalid packet received.")
+                print(seq, self.seq)
+                return self.recv(__bufsize)
+
+    def establish_client(self, public_key):
+        raw_key = str(random.randint(0, 10**6))
+        key = AES.generate_symmetric_key(raw_key)
+        self.send(RSA.encrypt(key, public_key))
+        self.aes_key = key
+
+    def establish_server(self, private_key):
+        encrypted_key = self.recv(Resources.BUFFER_SIZE)
+        self.aes_key = RSA.decrypt(encrypted_key, private_key)
+
+
+def wrap_socket(raw_socket) -> SecureSocket:
+    secure_socket = SecureSocket()
+    secure_socket.raw_socket = raw_socket
+    return secure_socket
+
+\end{lstlisting}
+\end{latin}
+
+‫\subsection{ایجاد حساب کاربری کلاینت}
+‫در این بخش و برای ثبت‌نام، ابتدا بررسی می‌کنیم تا یوزر از پیش روی دستگاه وجود نداشته باشد.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=166, language=Python]
+def register_new_user(username, password):
+    global client_user
+    if os.path.isdir(f"./user/{username}"):
+        print("User already exists with this username.")
+        return False
+    message_type = "register"
+    return initialize_user(message_type, username, password)
+\end{lstlisting}
+\end{latin}
+
+‫پس از این اقدام به ایجاد کلید‌های یوزر می‌کنیم. برای یک یوزر سه جفت کلید تولید خواهیم کرد. یک جفت کلید \لر{RSA} که برای امضای پیام‌ها استفاده خواهد شد. دو جفت کلید الجمل که بخش اصلی شروع تبادل کلید پروتکل‌ پیاده‌سازی شده‌ی ما خواهند بود. با ساخت آن‌ها، پیامی برای سرور ارسال می‌کنیم تا ثبت‌نام را انجام بدهیم، در این پیام تمامی کلیدهای عمومی و هش یوزرنیم و پسوورد را برای سرور ارسال می‌کنیم. علت ارسال هش یوزرنیم و پسوورد این است که از آنجا که یوزرنیم یونیک است، این قبارت هم یونیک خواهد بود و به مهاجم در صورت دسترسی به اطلاعات سرور، دیتایی در مورد شباهت پسوورد افراد نمی‌دهد. اگر موفقیت آمیز بود، اقدام به ایجاد یک آبجکت یوزر می‌کنیم.
+‫
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=175, language=Python]
+def initialize_user(message_type: str, username: str, password: str, old_password_hash="") -> bool:
+    global client_user
+    rsa_pr, rsa_pk = RSA.gen_key(username, password)
+    elgamal_pr, elgamal_pk = ElGamal.gen_key(username, password)
+    prekey_pr, prekey_pk = ElGamal.gen_key(username, password, "prekey")
+    password_hash = Resources.get_hash(username + password)
+    second_field = username if message_type == "register" else old_password_hash
+    message = f"{message_type}{Resources.SEP}" \
+              f"{second_field}{Resources.SEP}" \
+              f"{password_hash}{Resources.SEP}" \
+              f"{rsa_pk}{Resources.SEP}" \
+              f"{elgamal_pk}{Resources.SEP}" \
+              f"{prekey_pk}{Resources.SEP}"
+    send_to_server(message, sign=(message_type != "register"))
+    response = receive_from_server().split(Resources.SEP)
+    print(response[2])
+    if response[0] == "200":
+        client_user = create_user(username, password)
+        return True
+    return False
+\end{lstlisting}
+\end{latin}
+
+‫توابع ایجاد کننده‌ی کلید، کلید‌های ایجاد شده را با استفاده از هش یوزرنیم و پسوورد به صورت رمزشده روی دستگاه ذخیره می‌کنند. این تابع که مرتبط با این عملیات است را می‌توانید در زیر مشاهده کنید.
+‫
+‫این موضوع به ما اجازه می‌دهد تا اگر دستگاه یوزر هک شود، کلیدهای خصوصی به صورت رمزشده ذخیره شده باشند و امکان بدست آوردن این کلیدها برای حمله کننده وجود نداشته باشد.
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=12, language=Python]
+def save_keys(username: str, password: str, method: str, private_key: str, public_key: str):
+    if not os.path.isdir("./user"):
+        os.mkdir("./user")
+
+    if not os.path.isdir(f"./user/{username}"):
+        os.mkdir(f"./user/{username}")
+
+    with open(f"./user/{username}/{method}_private.key", 'wb') as content_file:
+        os.chmod(f"./user/{username}/{method}_private.key", 0o600)
+        aes_key = AES.generate_symmetric_key(password)
+        private_key_encrypted = AES.encrypt(private_key, aes_key, AES.default_iv)
+        content_file.write(private_key_encrypted.encode("ASCII"))
+
+    with open(f"./user/{username}/{method}_public.key", 'wb') as content_file:
+        content_file.write(public_key.encode("ASCII"))
+
+    return
+\end{lstlisting}
+\end{latin}
+
+‫سرور پس از بررسی اطلاعات ارسالی از طرف کاربر، اگر یوزرنیم آن تکراری نباشد اجازه‌ی ایجاد حساب کاربری را به کاربر می‌دهد و جوابی مبنی بر موفقیت در عملیات ثبت‌نام برای ان ارسال می‌کند.
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=73, language=Python]
+def register_new_user(client_socket: socket.socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
+    if username_exists(username):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
+
+    new_user = User(username, password_hash, rsa_pk, elgamal_pk, prekey_pk)
+    users.append(new_user)
+    messages[new_user.username] = []
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User registered successfully"
+    response_client(client_socket, response)
+    return new_user
+\end{lstlisting}
+\end{latin}
+
+‫از این پس تمامی پیام‌هایی که کاربر ارسال می‌کند امضا خواهند داشت تا احراز اصالت و احراز صحت شوند و همچنین خاصیت عدم انکار را فراهم کنند.
+‫
+‫\subsection{لاگین}
+‫در صورتی که کاربر قصد لاگین داشته باشد، ابتدا پیامی به سرور مبنی بر درخواست لاگین ارسال می‌کند. سرور برای آن یک متغیر تصادفی به اسم سالت ارسال می‌کند و یوزر هش یوزرنیم، پسوورد را با سالت ترکیب می‌کند و مجددا هش می‌گیرد. اینگونه در هربار لاگین، عبارات متفاوتی بین کلاینت و سرور جابجا می‌شوند.
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=206, language=Python]
+def login_user(username, password):
+    global client_user
+    if not os.path.isdir(f"./user/{username}"):
+        print("You don't have the keys for this username")
+        return False
+    try:
+        client_user = create_user(username, password)
+    except Resources.InvalidKeysException:
+        print("Keys are not valid")
+        return False
+    except Resources.WrongPasswordException:
+        print("Wrong password or keys are manipulated")
+        return False
+    load_db(username, Resources.get_hash(username + password))
+    message = f"login{Resources.SEP}" \
+              f"{username}"
+    send_to_server(message, False)
+    response = receive_from_server().split(Resources.SEP)
+
+    if response[0] == "200":
+        salt = response[2]
+        password_hash = Resources.get_hash(username + password)
+        otp = Resources.get_hash(salt + password_hash)
+        message = f"{otp}"
+        send_to_server(message, False)
+        response = receive_from_server().split(Resources.SEP)
+        print(response[2])
+        return response[0] == "200"
+    else:
+        return False
+\end{lstlisting}
+\end{latin}
+
+‫ سرور پس از دریافت اطلاعات صحیح و احراز هویت، اصالت و صحت وی به او پیامی بر موفقیت ارسال می‌کند و وضعیت وی را به صورت آنلاین ست می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=112, language=Python]
+def login_user(client_socket: socket.socket, username):
+    for user in users:
+        if username == user.username:
+            salt = random.randint(0, 10 ** 50)
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}" \
+                       f"{salt}"
+            response_client(client_socket, response)
+            otp = receive_from_client(client_socket, None)
+
+            if user.check_password(str(salt), otp):
+                response = f"200{Resources.SEP}" \
+                           f"OK{Resources.SEP}" \
+                           f"User {user.username} logged in " \
+                           f"successfully"
+                response_client(client_socket, response)
+                user.set_online()
+                return user
+
+            else:
+                response = f"400{Resources.SEP}" \
+                           f"Bad Request{Resources.SEP}" \
+                           f"Wrong password"
+                response_client(client_socket, response)
+                return None
+
+    response = f"400{Resources.SEP}" \
+               f"Bad Request{Resources.SEP}" \
+               f"User does not exist"
+    response_client(client_socket, response)
+    return None
+\end{lstlisting}
+\end{latin}
+
+‫\subsection{نمایش کاربران آنلاین}
+‫برای این کار کلاینت پیامی مبنی بر دریافت لیست کاربران به سرور ارسال می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=238, language=Python]
+def retrieve_usernames_from_server():
+    message = f"show users list"
+    send_to_server(message, True)
+    response = receive_from_server().split(Resources.SEP)
+    return response[2]
+\end{lstlisting}
+\end{latin}
+
+‫سرور هم در پاسخ لیستی از کاربران و وضعیت آنلاین بودن یا نبودن آن‌ها را برای کاربر باز می‌گرداند. شکل~\رجوع{1}
+\begin{latin}
+\begin{lstlisting}[firstnumber=154, language=Python]
+def show_users_list(client_socket: socket.socket):
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}"
+
+    for user in users:
+        response += f"- {user.username} ({'Online' if user.is_online else 'Offline'})\n"
+
+    response_client(client_socket, response[:-1])
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫\شروع{شکل}[H]
+‫\centerimg{1.png}{15.5cm}
+‫\شرح{نمایش لیست کاربران}
+‫\برچسب{1}
+‫\پایان{شکل}
+‫
+‫\subsection{ارسال و دریافت پیام}
+‫در اینجا برای ارسال پیام به یک کاربر دیگر، ابتدا از سرور کلید‌های او را دریافت می‌کنیم.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=327, language=Python]
+def retrieve_keys(username: str):
+    global users
+
+    message = f"retrieve keys{Resources.SEP}" \
+              f"{username}"
+    send_to_server(message, sign=True)
+    response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
+
+    if response[0] == "200":
+        rsa_pk, elgamal_pk, prekey_pk = response[2].split(Resources.SEP)
+        users = [user for user in users if user.username != username]
+        user = User(username, "", rsa_pk, int(elgamal_pk), int(prekey_pk))
+        users.append(user)
+        return True
+    else:
+        print(response[2])
+        return False
+\end{lstlisting}
+\end{latin}
+‫
+‫
+‫سرور در صورت وجود کاربر، به ما کلیدهای عمومی او را برمی‌گرداند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=165, language=Python]
+def retrieve_keys(client_socket: socket.socket, username: str):
+    for user in users:
+        if user.username == username:
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}"
+            response += user.rsa_pk + Resources.SEP + str(user.elgamal_pk) + Resources.SEP + str(user.prekey_pk)
+            response_client(client_socket, response)
+            return
+
+    response = f"404{Resources.SEP}" \
+               f"Not Found{Resources.SEP}" \
+               f"User does not exist."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫با دریافت این کلیدها، پروتکل ایجاد کلید ما شروع می‌شود.
+‫\subsubsection{ایجاد کلید مادر}
+‫ابتدا با الهام از روش \لر{X3DH} که در سیگنال وجود دارد، با استفاده از کلیدهای دریافتی از سرور، اقدام به ایجاد کلید مادر می‌کنیم. برای این کار سه کلید دیفی‌هلمن با استفاده از پیام‌های دریافتی و جفت کلید‌های خصوصی خودمان و همچنین یک جفت کلید موقتی الجمل دیگر که در لحظه تولید کرده‌ایم را ایجاد می‌کنیم. کلید مادر از اتصال این سه کلید ایجاد می‌شود که ورودی رچت ماست. در اینجا پارامترهای مورد نیاز و کلیدهای عمومی خودمان را نیز برای طرف مقابل ارسال می‌کنیم.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=265, language=Python]
+def x3dh_key_exchange(target_user: User, seq=0) -> bool:
+    print("sending key...")
+
+    ek_pr, ek_pk = ElGamal.gen_key()
+
+    DH1 = ElGamal.DH_key(target_user.prekey_pk, client_user.elgamal_pr)
+    DH2 = ElGamal.DH_key(target_user.elgamal_pk, ek_pr)
+    DH3 = ElGamal.DH_key(target_user.prekey_pk, ek_pr)
+
+    SK = AES.generate_symmetric_key(str(DH1) + str(DH2) + str(DH3))
+
+    chat = chats[target_user.username]
+    chat.root_key = SK
+    chat.DH_key = ElGamal.DH_key(target_user.prekey_pk, client_user.prekey_pr)
+    chat.our_pr = client_user.prekey_pr
+    chat.their_pk = target_user.prekey_pk
+    chat.their_rsa_pk = target_user.rsa_pk
+
+    new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
+    chat.root_key = new_root_key
+    chat.message_key = message_key
+
+    initial_message = str(client_user.elgamal_pk) \
+                      + Resources.SEP + str(target_user.prekey_pk) \
+                      + Resources.SEP + str(ek_pk) \
+                      + Resources.SEP + client_user.rsa_pk \
+                      + Resources.SEP + str(client_user.prekey_pk)
+
+    print(initial_message)
+
+    message_obj = Message(message_type="x3dh",
+                          source_username=client_user.username,
+                          target_username=target_user.username,
+                          seq=seq,
+                          signature=RSA.sign(str(seq) + initial_message, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          text=initial_message)
+
+    chats[target_user.username].append_message(message_obj)
+
+    request = str(message_obj)
+    send_to_server(request, sign=True)
+    response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
+    return response[0] == "200"
+\end{lstlisting}
+\end{latin}
+
+‫از اینجا به بعد سرور عموما پیام‌ها را صرفا در صف ارسال به کاربر هدف قرار می‌دهد و نقش دیگری ندارد، از این رو تا زمانی که سرور کار خاصی انجام نمی‌دهد کدهای آن را اینجا توضیح نمی‌دهیم.
+‫
+‫حال این کلید مادر را به عنوان ورودی به تابع \لر{Key derivation function} می‌دهیم، مقدار ثابت را نیز برابر با کلید دیفی‌هلمن حاصل از کلید‌های \لر{elgamal\_prekey} خواهد بود، خروجی این تابع، یک کلید پیام است، حال مجددا این کلید پیام را به  تابع \لر{Key derivation function} می‌دهیم تا به ما یک کلید پیام جدید و یک کلید نهایی بدهد، کلید پیام برای هر ارسال پیام تا زمانی که پیامی از سمت مقابل دریافت نکرده‌ایم، هربار یک کلید نهایی و یک کلید پیام جدید تولید می‌کنیم و پیاممان را رمز می‌کنیم. این کار به ما محرمانگی پیشرو را خواهد داد.
+‫
+‫در طرف دریافت، گیرنده با دریافت پیام مبنی بر \لر{X3DH handshake} می‌تواند رچت را برای خودش بازسازی کند و پیام‌های ارسال شده توسط فرد مقابل تا بدان لحظه را رمزگشایی کند.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=310, language=Python]
+def x3dh_extract_key(text: str):
+    print("receiving key...")
+
+    A_elgamal_pk, our_prekey_pk, A_ek_pk, their_rsa_pk, their_prekey_pk = text.split(Resources.SEP)
+    A_elgamal_pk = int(A_elgamal_pk)
+    our_prekey_pk = int(our_prekey_pk)
+    A_ek_pk = int(A_ek_pk)
+    their_prekey_pk = int(their_prekey_pk)
+
+    DH1 = ElGamal.DH_key(A_elgamal_pk, client_user.prekey_pr)
+    DH2 = ElGamal.DH_key(A_ek_pk, client_user.elgamal_pr)
+    DH3 = ElGamal.DH_key(A_ek_pk, client_user.prekey_pr)
+
+    SK = AES.generate_symmetric_key(str(DH1) + str(DH2) + str(DH3))
+    return SK, their_prekey_pk, their_rsa_pk
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsubsection{ارسال پیام و بهره‌گیری از ایده‌ی دابل رچت}
+‫هنگام ارسال یک پیام، اگر فرستنده‌ی پیام پیشین ما نباشیم، یک جفت کلید دیفی‌هلمن تولید می‌کنیم و هنگام ارسال پیام کلید عمومی آن را نیز ارسال می‌کنیم. همچنین کلید مادر را به همراه کلید دیفی هلمن ایجاد شده توسط کلید خصوصی جدید و کلید عمومی فعلی فرد مخاطب به عنوان مقدار ثابت، وارد \لر{KDF} می‌کنیم تا کلید مادر جدید و کلید پیام جدیدی ایجاد کنیم. این روش همان روش دابل رچت پیاده‌سازی شده در پیامرسان سیگنال است.
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=346, language=Python]
+def send_message(chat: Chat, message_type, text, target_group=""):
+    print(f"sending \"{text}\" to {chat.username}...")
+    fetch_messages()
+
+    if chat.messages[-1].source_username != client_user.username:
+        private_key, public_key = ElGamal.gen_key()
+
+        if send_message_to_server(chat, "dr_pk", str(public_key)):
+            chat.our_pr = private_key
+            chat.DH_key = ElGamal.DH_key(chat.their_pk, private_key)
+            chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
+
+    return send_message_to_server(chat, message_type, text, target_group)
+\end{lstlisting}
+\end{latin}
+‫
+‫طرف مقابل با دریافت پیام، عمل مشابهی را انجام می‌دهد و کلید عمومی ما را استخراج، و مقدار ثابت جدید را محاسبه خواهد کرد. با این کار رچت طرفین همواره سینک خواهد ماند و هر پیام با کلیدی جدید روز خواهد شد که ارتباطی با کلیدهای پیشین و آینده ندارد. اینگونه محرمانگی آینده و پیشرو را تضمین خواهیم کرد. هنگام دریافت، امضای پیام نیز چک خواهد شد و همچنین بررسی می‌کنیم که شماره‌ی \لر{Sequence number} هم درست باشد، اینگونه پیام احراز اصالت و احراز صحت می‌شود، همچنین محرمانگی آن حفظ می‌شود و امکان انکار آن توسط ارسال کننده وجود نخواهد داشت.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=414 , language=Python]
+def receive_message(chat: Chat, message_obj: Message):
+    new_message_key, the_ultimate_key = chat.KDF(chat.DH_key, chat.message_key)
+    chat.message_key = new_message_key
+
+    # decrypt the message text
+    message_obj.text = AES.decrypt(message_obj.text, the_ultimate_key)
+
+    # check the message sign
+    user = get_user_by_chat(chat)
+    try:
+        RSA.verify_signature(str(message_obj.seq) + message_obj.text, message_obj.signature,
+                             RSA.pem_to_public_key(chat.their_rsa_pk))
+        message_obj.source_rsa_pk = chat.their_rsa_pk
+    except InvalidSignature:
+        return
+
+    # update the keys for "dr_pk" control message
+    if chat.messages[-1].source_username != message_obj.source_username:
+        chat.their_pk = int(message_obj.text)
+        chat.DH_key = ElGamal.DH_key(chat.their_pk, chat.our_pr)
+        chat.root_key, chat.message_key = chat.KDF(chat.DH_key, chat.root_key)
+
+    chat.append_message(message_obj)
+    return message_obj
+\end{lstlisting}
+\end{latin}
+
+‫تابعی نیز وجود دارد که عملیات دریافت پیام‌ها و پروسس کردن آن‌ها را انجام می‌دهد. این تابع پس از دریافت تمامی پیام‌ها از سرور، بسته به نوع پیام، امضا و شماره‌ی آن‌ها را چک می‌کند و آن‌ها را هندل می‌کند. مثلا اگر پیام عادی باشد آن را رمزگشایی می‌کند، اگر پیام تبادل \لر{X3DH} باشد کلیدها را ایجاد می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=441, language=Python]
+def fetch_messages():
+    request = f"fetch"
+    send_to_server(request, sign=True)
+    response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
+
+    # send ACK to server to delete fetched messages
+    send_to_server("ack", sign=True)
+
+    new_messages = json.loads(response[2])
+    new_messages_lists = [message.split(Resources.SEP) for message in new_messages]
+    new_messages_lists.sort(key=lambda x: x[3])
+
+    for message in new_messages:
+        message_type, source_username, target_username, target_group, seq, signature, text = message. \
+            split(Resources.SEP, maxsplit=7 - 1)
+        message_obj = Message(message_type=message_type,
+                              source_username=source_username,
+                              target_username=target_username,
+                              target_group=target_group,
+                              seq=seq,
+                              signature=signature,
+                              text=text)
+
+        if message_type not in ["add", "join", "remove"]:
+            retrieve_keys(source_username)
+
+        if message_type == "x3dh":
+            SK, their_prekey_pk, their_rsa_pk = x3dh_extract_key(text)
+
+            if source_username not in chats:
+                chats[source_username] = Chat(source_username)
+
+            chat = chats[source_username]
+            chat.append_message(message_obj)
+
+            chat.root_key = SK
+            chat.DH_key = ElGamal.DH_key(their_prekey_pk, client_user.prekey_pr)
+            chat.our_pr = client_user.prekey_pr
+            chat.their_pk = their_prekey_pk
+            chat.their_rsa_pk = their_rsa_pk
+
+            message_obj.source_rsa_pk = chat.their_rsa_pk
+
+            new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
+            chat.root_key = new_root_key
+            chat.message_key = message_key
+
+        elif message_type == "dr_pk":
+            chat = chats[source_username]
+            receive_message(chat, message_obj)
+
+        elif message_type == "text":
+            chat = chats[source_username]
+            receive_message(chat, message_obj)
+
+        elif message_type == "group_text":
+            chat = chats[source_username]
+            message_obj = receive_message(chat, message_obj)
+            group = groups[message_obj.target_group]
+            group.chat.append_message(message_obj)
+
+        elif message_type == "add":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            new_member_username, group_name = text.split(Resources.SEP)
+            groups[group_name].usernames.append(new_member_username)
+            groups[group_name].chat.append_message(message_obj)
+
+        elif message_type == "join":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            admin_username, group_name, dumped_usernames = text.split(Resources.SEP)
+            if group_name not in groups:
+                group = Group(admin_username, group_name)
+                groups[group.group_name] = group
+            groups[group_name].usernames = json.loads(dumped_usernames)
+            groups[group_name].chat.append_message(message_obj)
+
+        elif message_type == "remove":
+            try:
+                RSA.verify_signature(str(seq) + text, message_obj.signature, server_public_key)
+            except InvalidSignature:
+                continue
+            removed_member_username, group_name = text.split(Resources.SEP)
+            groups[group_name].usernames.remove(removed_member_username)
+            groups[group_name].chat.append_message(message_obj)
+
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsection{نگهداری پیام‌ها به صورت امن}
+‫برای این کار با استفاده از کدهای زیر، هنگام خروج فرد تمامی اطلاعات وی با استفاده از کلید مشتق از یوزرنیم و پسوورد او رمز می‌شوند و درون یک فایل ذخیره خواهند شد.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=35, language=Python]
+def dump_chat(chat):
+    dumped_chat = {"root_key": chat.root_key,
+                   "message_key": chat.message_key,
+                   "DH_key": chat.DH_key,
+                   "our_pr": chat.our_pr,
+                   "their_pk": chat.their_pk,
+                   "their_rsa_pk": chat.their_rsa_pk,
+                   "seq": chat.seq,
+                   "username": chat.username,
+                   "messages": []}
+    for message in chat.messages:
+        dumped_chat["messages"].append({"source_rsa_pk": message.source_rsa_pk,
+                                        "message_type": message.message_type,
+                                        "source_username": message.source_username,
+                                        "target_username": message.target_username,
+                                        "seq": message.seq, "signature": message.signature,
+                                        "text": message.text,
+                                        "target_group": message.target_group
+                                        })
+    return dumped_chat
+
+
+def load_chat(dumped_chat):
+    username = dumped_chat["username"]
+    chat = Chat(username)
+    chat.root_key = dumped_chat["root_key"]
+    chat.message_key = dumped_chat["message_key"]
+    chat.DH_key = dumped_chat["DH_key"]
+    chat.our_pr = dumped_chat["our_pr"]
+    chat.their_pk = dumped_chat["their_pk"]
+    chat.their_rsa_pk = dumped_chat["their_rsa_pk"]
+    chat.seq = dumped_chat["seq"]
+    chat.messages = []
+    for message in dumped_chat["messages"]:
+        new_message = Message(message["message_type"], message["source_username"], message["target_username"],
+                              message["seq"], message["signature"], message["text"], message["target_group"])
+        new_message.source_rsa_pk = message["source_rsa_pk"]
+        chat.messages.append(new_message)
+    return chat
+
+
+def save_to_db():
+    db = {"users": [], "chats": [], "groups": []}
+    for user in users:
+        new_user = {"rsa_pk": user.rsa_pk, "elgamal_pk": user.elgamal_pk, "prekey_pk": user.prekey_pk,
+                    "username": user.username}
+        db["users"].append(new_user)
+
+    for username in chats:
+        chat = chats[username]
+        dumped_chat = dump_chat(chat)
+        db["chats"].append(dumped_chat)
+
+    for group_name in groups:
+        group = groups[group_name]
+        dumped_group = {"admin_username": group.admin_username,
+                        "group_name": group_name,
+                        "usernames": group.usernames}
+        new_chat = dump_chat(group.chat)
+        dumped_group["chat"] = new_chat
+        db["groups"].append(dumped_group)
+
+    with open(f"./user/{client_user.username}/{client_user.username}_db.imal", 'wb') as db_file:
+        content = json.dumps(db)
+        aes_key = AES.generate_symmetric_key(client_user.password_hash)
+        db_encrypted = AES.encrypt(content, aes_key, AES.default_iv)
+        db_file.write(db_encrypted.encode("ASCII"))
+def dump_chat(chat):
+    dumped_chat = {"root_key": chat.root_key,
+                   "message_key": chat.message_key,
+                   "DH_key": chat.DH_key,
+                   "our_pr": chat.our_pr,
+                   "their_pk": chat.their_pk,
+                   "their_rsa_pk": chat.their_rsa_pk,
+                   "seq": chat.seq,
+                   "username": chat.username,
+                   "messages": []}
+    for message in chat.messages:
+        dumped_chat["messages"].append({"source_rsa_pk": message.source_rsa_pk,
+                                        "message_type": message.message_type,
+                                        "source_username": message.source_username,
+                                        "target_username": message.target_username,
+                                        "seq": message.seq, "signature": message.signature,
+                                        "text": message.text,
+                                        "target_group": message.target_group
+                                        })
+    return dumped_chat
+
+
+def load_chat(dumped_chat):
+    username = dumped_chat["username"]
+    chat = Chat(username)
+    chat.root_key = dumped_chat["root_key"]
+    chat.message_key = dumped_chat["message_key"]
+    chat.DH_key = dumped_chat["DH_key"]
+    chat.our_pr = dumped_chat["our_pr"]
+    chat.their_pk = dumped_chat["their_pk"]
+    chat.their_rsa_pk = dumped_chat["their_rsa_pk"]
+    chat.seq = dumped_chat["seq"]
+    chat.messages = []
+    for message in dumped_chat["messages"]:
+        new_message = Message(message["message_type"], message["source_username"], message["target_username"],
+                              message["seq"], message["signature"], message["text"], message["target_group"])
+        new_message.source_rsa_pk = message["source_rsa_pk"]
+        chat.messages.append(new_message)
+    return chat
+
+
+def save_to_db():
+    db = {"users": [], "chats": [], "groups": []}
+    for user in users:
+        new_user = {"rsa_pk": user.rsa_pk, "elgamal_pk": user.elgamal_pk, "prekey_pk": user.prekey_pk,
+                    "username": user.username}
+        db["users"].append(new_user)
+
+    for username in chats:
+        chat = chats[username]
+        dumped_chat = dump_chat(chat)
+        db["chats"].append(dumped_chat)
+
+    for group_name in groups:
+        group = groups[group_name]
+        dumped_group = {"admin_username": group.admin_username,
+                        "group_name": group_name,
+                        "usernames": group.usernames}
+        new_chat = dump_chat(group.chat)
+        dumped_group["chat"] = new_chat
+        db["groups"].append(dumped_group)
+
+    with open(f"./user/{client_user.username}/{client_user.username}_db.imal", 'wb') as db_file:
+        content = json.dumps(db)
+        aes_key = AES.generate_symmetric_key(client_user.password_hash)
+        db_encrypted = AES.encrypt(content, aes_key, AES.default_iv)
+        db_file.write(db_encrypted.encode("ASCII"))
+
+\end{lstlisting}
+\end{latin}
+
+‫هنگام ورود نیز با استفاده از کدهای زیر پیام‌ها و کلیدهای فرد رمزگشایی می‌شوند. همچنین تمامی کلیدهای خصوصی که به صورت رمزشده نگهداری شده بودند نیز هنگام ورود رمزگشایی می‌شوند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=104, language=Python]
+def load_db(username, password_hash):
+    global users, chats
+
+    with open(f"./user/{username}/{username}_db.imal", 'rb') as db_file:
+        db_encrypted = db_file.read().decode("ASCII")
+        aes_key = AES.generate_symmetric_key(password_hash)
+        content = AES.decrypt(db_encrypted, aes_key, AES.default_iv)
+        db = json.loads(content)
+
+    for dumped_user in db["users"]:
+        user = User(dumped_user["username"], dumped_user["rsa_pk"], "",
+                    dumped_user["elgamal_pk"], dumped_user["prekey_pk"])
+        users.append(user)
+
+    for dumped_chat in db["chats"]:
+        chat = load_chat(dumped_chat)
+        chats[chat.username] = chat
+
+    for dumped_group in db["groups"]:
+        group = Group(dumped_group["admin_username"], dumped_group["group_name"])
+        group.usernames = dumped_group["usernames"]
+        group.chat = load_chat(dumped_group["chat"])
+        groups[group.group_name] = group
+
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsection{نگهداری کلیدها به صورت امن}
+‫کدهای مطرح شده در بخش پیشین، این نیازمندی را نیز برطرف می‌کردند. تمامی کلیدها به صورت رمز شده در فایل ذخیره شده و هنگام لاگین ریکاور می‌شوند.
+‫
+‫\subsection{ایجاد و مدیریت گروه}
+‫در این بخش ابتدا کلاینت پیامی مبنی بر ایجاد گروه برای سرور ارسال می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=615, language=Python]
+def create_group(group_name: str):
+    request = f"create{Resources.SEP}{group_name}"
+    send_to_server(request, sign=True)
+    response = receive_from_server().split(Resources.SEP, maxsplit=3 - 1)
+    if response[0] == "200":
+        group = Group(client_user.username, group_name)
+        groups[group_name] = group
+        print(response[2])
+        return True
+
+    print(response[2])
+\end{lstlisting}
+\end{latin}
+‫
+‫سرور با دریافت این پیام و بررسی امکان ایجاد گروه با یوزرنیم ارسالی، جواب کلاینت را می‌دهد. سپس کلاینت در صورت جواب مثبت سرور، آبجکت آن را ایجاد می‌کند. سرور نیز یک آبجکت گروه ایجاد می‌کند و اسم آن و ادمین ان را مشخص می‌کند. ایجاد کننده را نیز در لیست اعضای گروه قرار می‌دهد.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=234, language=Python]
+def create_group(client_socket: socket.socket, user: User, group_name: str):
+    if username_exists(group_name):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
+
+    group = Group(user.username, group_name)
+    groups[group_name] = group
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Group created successfully"
+    response_client(client_socket, response)
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsubsection{ارسال پیام در گروه}
+‫هنگام ارسال پیام، کاربر ابتدا پیام‌ها را از سرور دریافت می‌کند تا اعضای فعلی گروه و همچنین پیام‌های آن را بدست آورد. پس از این برای ارسال پیام، هر فرد پیامی را به روش ارسال پیام خصوصی به افراد، البته با تایپ متفاوت، در گروه ارسال می‌کند، یعنی برای تمامی اعضای فعلی گروه پیام را مستقلا ارسال می‌کند.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=361, language=Python]
+def send_group_message(group: Group, message_type, text):
+    print(f"sending \"{text}\" to {group.group_name}...")
+    fetch_messages()
+
+    message_obj = Message(message_type="group_text",
+                          source_username=client_user.username,
+                          target_username=client_user.username,
+                          seq=0,
+                          signature=RSA.sign(str(0) + text, RSA.pem_to_private_key(client_user.rsa_pr)),
+                          text=text,
+                          target_group=group.group_name)
+
+    # save our own message to chat of group
+    group.chat.append_message(message_obj)
+
+    # send the message to other members of group
+    for username in group.usernames:
+        if username != client_user.username:
+            open_chat(username)
+            send_message(chats[username], message_type, text, group.group_name)
+
+\end{lstlisting}
+\end{latin}
+‫
+‫در سمت دریافت، هر فرد پیام‌ها را دریافت می‌کند و اگر تایپ آن از جنس پیام‌های گروه باشد، آن را در لیست پیام‌های گروه قرار می‌دهد. با این روش تمامی نیازمندی‌های محرمانگی پیشرو، محرمانگی اینده، حفظ محرمانگی پیام، احراز اصالت و صحت و عدم انکار را مشابها برای پیام‌های ارسالی در گروه نیز داریم.
+‫
+‫از سمتی سرور هنگامی که همچین پیامی ارسال می‌شود، ابتدا بررسی می‌کند که این فرد عضو گروه باشد و در این صورت پیام آن را برای افراد ارسال می‌کند، وگرنه به او پیغام خطا نشان می‌دهد. اینگونه کنترل دسترسی در سمت ارسال کننده‌ی پیام را خواهیم داشت.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=181, language=Python]
+def save_message(client_socket: socket.socket, message: str):
+    _type, source_username, target_username, target_group, seq, signature, text = message. \
+        split(Resources.SEP, maxsplit=7 - 1)
+    message_obj = Message(message_type=_type,
+                          source_username=source_username,
+                          target_username=target_username,
+                          target_group=target_group,
+                          seq=seq,
+                          signature=signature,
+                          text=text)
+
+    for user in users:
+        if user.username == target_username:
+            if message_obj.target_group != "":
+                if message_obj.target_group not in groups:
+                    response = f"404{Resources.SEP}" \
+                               f"Not Found{Resources.SEP}" \
+                               f"Group does not exist."
+                    response_client(client_socket, response)
+                    return
+                elif message_obj.source_username not in groups[message_obj.target_group].usernames:
+                    response = f"403{Resources.SEP}" \
+                               f"Forbidden{Resources.SEP}" \
+                               f"You are not a member of this group."
+                    response_client(client_socket, response)
+                    return
+
+            messages[user.username].append(message_obj)
+
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}" \
+                       f"Message saved."
+            response_client(client_socket, response)
+            return
+
+    response = f"404{Resources.SEP}" \
+               f"Not Found{Resources.SEP}" \
+               f"User does not exist."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsubsection{اضافه کردن عضو به گروه}
+‫برای این کار کلاینت یک پیام مبنی بر اضافه کردن فرد به گروه ارسال می‌کند و در صورت تایید آن توسط سرور، فرد را به یوزرهای درون گروه خودش در آبجکت گروه مورد نظر اضافه می‌کند که این در تابع \لر{fetch messages} اتفاق می‌افتند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=653, language=Python]
+def add_member_to_group(group: Group, new_member_username: str):
+    fetch_messages()
+    message = f"add{Resources.SEP}{group.group_name}{Resources.SEP}{new_member_username}"
+    send_to_server(message, True)
+    response = receive_from_server().split(Resources.SEP)
+
+    print(response[2])
+\end{lstlisting}
+\end{latin}
+
+‫در سمت سرور، ابتدا سرور بررسی می‌کند که فرد ادمین گروه باشد، سپس بررسی می‌کند که فرد وجود داشته باشد و اگر همگی این موضوعات درست بودند، پیامی به تمامی اعضا، اعم از ادمین گروه مبنی بر اضافه شدن فردی به گروه می‌فرستد تا همگی فرد جدید را به لیست اعضای خودشان در گروه اضافه کنند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=250, language=Python]
+def add_member_to_group(client_socket: socket.socket, user: User, group_name, new_member_username):
+    # check if group exists
+    if group_name not in groups:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"Group does not exist."
+        response_client(client_socket, response)
+        return
+
+    group = groups[group_name]
+
+    # check if sender of add request is member of the group
+    if user.username not in group.usernames:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if sender of add request is admin of the group
+    if user.username != group.admin_username:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not the admin of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user exists
+    if new_member_username not in [user.username for user in users]:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User does not exist."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user is already in the group
+    if new_member_username in group.usernames:
+        response = f"400{Resources.SEP}" \
+                   f"Not Not Found{Resources.SEP}" \
+                   f"User is already a member of this group."
+        response_client(client_socket, response)
+        return
+
+    for old_member_username in group.usernames:
+        # if old_member_username != user.username:
+        add_text = new_member_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="add",
+                              source_username="",
+                              target_username=old_member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + add_text, server_private_key),
+                              text=add_text)
+        messages[old_member_username].append(message_obj)
+
+    group.usernames.append(new_member_username)
+
+    join_text = group.admin_username + Resources.SEP + group.group_name + Resources.SEP + json.dumps(group.usernames)
+    message_obj = Message(message_type="join",
+                          source_username="",
+                          target_username=new_member_username,
+                          seq=0,
+                          signature=RSA.sign(str(0) + join_text, server_private_key),
+                          text=join_text)
+    messages[new_member_username].append(message_obj)
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User added to group successfully."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫\subsubsection{حذف فرد از گروه}
+‫با توجه به نحوه‌ی پیاده‌سازی گروه، این کار نیز مشابه عملیات اضافه کردن صورت می‌گیرد. کلاینت گروه پیامی مبنی بر حذف فرد از گروه به سرور ارسال می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=Python]
+def remove_member_from_group(group: Group, member_username: str):
+    fetch_messages()
+    message = f"remove{Resources.SEP}{group.group_name}{Resources.SEP}{member_username}"
+    send_to_server(message, True)
+    response = receive_from_server().split(Resources.SEP)
+
+    print(response[2])
+\end{lstlisting}
+\end{latin}
+
+‫از سوی دیگر سرور پس از بررسی ادمین بودن شخص و حضور شخص گفته شده در گروه، پیامی مبنی بر حذف افراد به همگی اعضا ارسال می‌کند.
+
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=322, language=Python]
+def remove_member_from_group(client_socket: socket.socket, user: User, group_name, to_be_removed_username):
+    # check if group exists
+    if group_name not in groups:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"Group does not exist."
+        response_client(client_socket, response)
+        return
+
+    group = groups[group_name]
+
+    # check if sender of remove request is member of the group
+    if user.username not in group.usernames:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if sender of remove request is admin of the group
+    if user.username != group.admin_username:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not the admin of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user exists
+    if to_be_removed_username not in [user.username for user in users]:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User does not exist."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user is already in the group
+    if to_be_removed_username not in group.usernames:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User is not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    for member_username in group.usernames:
+        # if member_username != user.username:
+        remove_text = to_be_removed_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="remove",
+                              source_username="",
+                              target_username=member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + remove_text, server_private_key),
+                              text=remove_text)
+        messages[member_username].append(message_obj)
+
+    group.usernames.remove(to_be_removed_username)
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User removed from group successfully."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫
+‫\subsection{تایید صحت نشست از طریق کانال امن}
+‫برای این کار در چت دوطرفه، چند کاراکتر اول کلید فعلی پیام را نشان می‌دهیم، اگر این متفیر برای هر دو طرف یکسان باشد، نشان از صحت نشست دارد. شکل~\رجوع{2}
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=582, language=Python]
+def verify_keys(chat: Chat):
+    fetch_messages()
+    print("To verify the conversation is end-to-end encrypted, compare the following hash of keys with your friend's:")
+    print(Resources.get_hash(chat.message_key)[:5])
+\end{lstlisting}
+\end{latin}
+‫
+‫\شروع{شکل}[H]
+‫\centerimg{2.png}{15.5cm}
+‫\شرح{احراز صحت نشست از طریق کانال امن در چت دوطرفه}
+‫\برچسب{2}
+‫\پایان{شکل}
+‫
+‫
+‫برای احراز صحت نشست در گروه لازم است تا هرکس کلیدهایش را با سایرین بررسی کند، کد زیر نیز همیان امکان را فراهم می‌کند. شکل~\رجوع{3}
+\begin{latin}
+\begin{lstlisting}[firstnumber=582, language=Python]
+def verify_group_keys(group: Group):
+    fetch_messages()
+    print(
+        "To verify the conversation is end-to-end encrypted, compare the following hashes of keys with your friends':")
+    for username in group.usernames:
+        if username != client_user.username:
+            try:
+                print(username + ": " + Resources.get_hash(chats[username].message_key)[:5])
+            except KeyError:
+                print(username + ": " + "none")
+\end{lstlisting}
+\end{latin}
+
+‫\شروع{شکل}[H]
+‫\centerimg{3.png}{15.5cm}
+‫\شرح{احراز صحت نشست از طریق کانال امن در گروه}
+‫\برچسب{3}
+‫\پایان{شکل}
+‫
+‫\subsection{تازه‌سازی کلیدهای نشست}
+‫برای این کار کلاینت به سرور اطلاع می‌دهد که قصد این کار را دارد، همچنین پسوورد قدیمی و جدیدش را نیز برای سرور ارسال می‌کند. در صورت موفقیت کلاینت به تمامی افرادی که به آن‌ها چت دارد، پیامی مبنی بر \لر{X3DH handshake} ارسال می‌کند تا رچت‌ها را پارامترهای جدید سازگار شوند و از نو ایجاد شوند، همچنین کلیدهای عمومی جدید را نیز برای آن‌ها ارسال می‌کند تا افراد بتوانند در صورت نیاز امضاهای پیام‌های میانی را بررسی کنند، چرا که سرور دیگر کلید عمومی‌های پیشین فرد را نخواهد داشت.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=720, language=Python]
+def renew_keys(old_password, new_password):
+    # fetch messages received from other users based on our old keys
+    fetch_messages()
+
+    if Resources.get_hash(client_user.username + old_password) != client_user.password_hash:
+        print("Wrong password.")
+        return
+    old_password_hash = Resources.get_hash(client_user.username + old_password)
+    if initialize_user("renew", client_user.username, new_password, old_password_hash):
+        for target_user in users:
+            x3dh_key_exchange(target_user)
+\end{lstlisting}
+\end{latin}
+
+‫در سمت سرور نیز پس از بررسی صحت کلاینت و درست بودن پسوورد آن، اطلاعات جدید می‌شوند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=92, language=Python]
+def renew_keys(client_socket: socket.socket, user: User, old_password_hash, new_password_hash, rsa_pk, elgamal_pk,
+               prekey_pk):
+    if user.password_hash != old_password_hash:
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Wrong password"
+        response_client(client_socket, response)
+
+    user.password_hash = new_password_hash
+    user.rsa_pk = rsa_pk
+    user.elgamal_pk = elgamal_pk
+    user.prekey_pk = prekey_pk
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Keys and password renewed successfully"
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+
+‫تمامی افرادی که این فرد با آن‌ها چت داشته پیامی از جنس \لر{X3DH}
+‫ دریافت می‌کنند (در تابع \لر{fetch messages} این موضوع هندل شده است که پیشتر مشاهده کردید.) و کلیدهای میانی را ایجاد می‌کنند تا پیام‌ها را رمزگشایی کنند و رچت‌هایشان را با این فرد هماهنگ کنند.
+‫
+‫\section{نیازمندی‌های سرور}
+‫\subsection{ثبت‌نام و احراز هویت کاربران و نگهداری اطلاعات مربوطه به صورت امن}
+‫بخش‌های مرتبط با ثبت‌نام و احراز هویت کاربران را پیشتر توضیح دادیم. برای نگهداری اطلاعات مربوطه به صورت امن اینگونه عمل کردیم که سرور هش یوزرنیم و پسوورد کاربران را نگه می‌دارد و در صورت دسترسی مهاجم به مخزن اطلاعاتی آن، مهاجم نخواهد توانست به رمز افراد دسترسی پیدا کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=73, language=Python]
+def register_new_user(client_socket: socket.socket, username, password_hash, rsa_pk, elgamal_pk, prekey_pk):
+    if username_exists(username):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
+
+    new_user = User(username, password_hash, rsa_pk, elgamal_pk, prekey_pk)
+    users.append(new_user)
+    messages[new_user.username] = []
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User registered successfully"
+    response_client(client_socket, response)
+    return new_user
+\end{lstlisting}
+\end{latin}
+‫
+‫
+‫\subsection{ارسال پیام‌ها به مقصد}
+‫برای این منظور، سرور پیام‌ها را در لیست مربوط به هر فرد قرار می‌دهد و هنگام \لر{fetch} کردن پیام‌ها توسط کاربر، تمامی این پیام‌ها برای وی ارسال خواهند شد.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=181, language=Python]
+def save_message(client_socket: socket.socket, message: str):
+    _type, source_username, target_username, target_group, seq, signature, text = message. \
+        split(Resources.SEP, maxsplit=7 - 1)
+    message_obj = Message(message_type=_type,
+                          source_username=source_username,
+                          target_username=target_username,
+                          target_group=target_group,
+                          seq=seq,
+                          signature=signature,
+                          text=text)
+
+    for user in users:
+        if user.username == target_username:
+            if message_obj.target_group != "":
+                if message_obj.target_group not in groups:
+                    response = f"404{Resources.SEP}" \
+                               f"Not Found{Resources.SEP}" \
+                               f"Group does not exist."
+                    response_client(client_socket, response)
+                    return
+                elif message_obj.source_username not in groups[message_obj.target_group].usernames:
+                    response = f"403{Resources.SEP}" \
+                               f"Forbidden{Resources.SEP}" \
+                               f"You are not a member of this group."
+                    response_client(client_socket, response)
+                    return
+
+            messages[user.username].append(message_obj)
+
+            response = f"200{Resources.SEP}" \
+                       f"OK{Resources.SEP}" \
+                       f"Message saved."
+            response_client(client_socket, response)
+            return
+
+    response = f"404{Resources.SEP}" \
+               f"Not Found{Resources.SEP}" \
+               f"User does not exist."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+‫
+‫پیام‌های گروه هم مشابها در همین تابع برای فرد درخواست کننده ذخیره و ارسال خواهند شد.
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=223, language=Python]
+def fetch_messages(client_socket: socket.socket, user: User):
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"{json.dumps([str(message) for message in messages[user.username]])}"
+    response_client(client_socket, response)
+
+    buffer = receive_from_client(client_socket, user)
+    if buffer == "ack":
+        messages[user.username] = []
+\end{lstlisting}
+\end{latin}
+
+
+‫\subsection{ارائه‌ی لیست کاربرا آنلاین}
+‫برای این کار سرور لیستی از کاربران و وضعیت آن‌ها را برای کلاینت ارسال می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=154, language=Python]
+def show_users_list(client_socket: socket.socket):
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}"
+
+    for user in users:
+        response += f"- {user.username} ({'Online' if user.is_online else 'Offline'})\n"
+
+    response_client(client_socket, response[:-1])
+    return
+\end{lstlisting}
+\end{latin}
+
+‫\subsection{ارسال و دریافت پیام‌های مربوط به ساخت کلید نشست}
+‫سرور تمامی پیام‌ها را در یک لیست قرار می‌دهد و این بخش مشابه با ارسال پیام‌ها به مقصد می‌باشد، همچنین تمامی پیام‌های کنترلی گرووه و پیام‌های مرتبط با تغییر کلیدها نیز به همان شکل هندل شده‌اند.
+‫
+‫\subsection{نگهداری اطلاعات مربوط به گروه‌ها}
+‫همانطور که پیشتر هم گفته شد، سرور تمامی اطلاعات مربوط به گروه‌ها اعم از اعضای گروه، اسم آن و سازنده‌ی آن را نگهداری می‌کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=234, language=Python]
+def create_group(client_socket: socket.socket, user: User, group_name: str):
+    if username_exists(group_name):
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Username already exists"
+        response_client(client_socket, response)
+        return
+
+    group = Group(user.username, group_name)
+    groups[group_name] = group
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Group created successfully"
+    response_client(client_socket, response)
+
+
+def add_member_to_group(client_socket: socket.socket, user: User, group_name, new_member_username):
+    # check if group exists
+    if group_name not in groups:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"Group does not exist."
+        response_client(client_socket, response)
+        return
+
+    group = groups[group_name]
+
+    # check if sender of add request is member of the group
+    if user.username not in group.usernames:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if sender of add request is admin of the group
+    if user.username != group.admin_username:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not the admin of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user exists
+    if new_member_username not in [user.username for user in users]:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User does not exist."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user is already in the group
+    if new_member_username in group.usernames:
+        response = f"400{Resources.SEP}" \
+                   f"Not Not Found{Resources.SEP}" \
+                   f"User is already a member of this group."
+        response_client(client_socket, response)
+        return
+
+    for old_member_username in group.usernames:
+        # if old_member_username != user.username:
+        add_text = new_member_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="add",
+                              source_username="",
+                              target_username=old_member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + add_text, server_private_key),
+                              text=add_text)
+        messages[old_member_username].append(message_obj)
+
+    group.usernames.append(new_member_username)
+
+    join_text = group.admin_username + Resources.SEP + group.group_name + Resources.SEP + json.dumps(group.usernames)
+    message_obj = Message(message_type="join",
+                          source_username="",
+                          target_username=new_member_username,
+                          seq=0,
+                          signature=RSA.sign(str(0) + join_text, server_private_key),
+                          text=join_text)
+    messages[new_member_username].append(message_obj)
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User added to group successfully."
+    response_client(client_socket, response)
+    return
+
+
+def remove_member_from_group(client_socket: socket.socket, user: User, group_name, to_be_removed_username):
+    # check if group exists
+    if group_name not in groups:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"Group does not exist."
+        response_client(client_socket, response)
+        return
+
+    group = groups[group_name]
+
+    # check if sender of remove request is member of the group
+    if user.username not in group.usernames:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if sender of remove request is admin of the group
+    if user.username != group.admin_username:
+        response = f"403{Resources.SEP}" \
+                   f"Not Forbidden{Resources.SEP}" \
+                   f"You are not the admin of this group."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user exists
+    if to_be_removed_username not in [user.username for user in users]:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User does not exist."
+        response_client(client_socket, response)
+        return
+
+    # check if requested user is already in the group
+    if to_be_removed_username not in group.usernames:
+        response = f"404{Resources.SEP}" \
+                   f"Not Found{Resources.SEP}" \
+                   f"User is not a member of this group."
+        response_client(client_socket, response)
+        return
+
+    for member_username in group.usernames:
+        # if member_username != user.username:
+        remove_text = to_be_removed_username + Resources.SEP + group.group_name
+        message_obj = Message(message_type="remove",
+                              source_username="",
+                              target_username=member_username,
+                              seq=0,
+                              signature=RSA.sign(str(0) + remove_text, server_private_key),
+                              text=remove_text)
+        messages[member_username].append(message_obj)
+
+    group.usernames.remove(to_be_removed_username)
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"User removed from group successfully."
+    response_client(client_socket, response)
+    return
+\end{lstlisting}
+\end{latin}
+
+‫\section{نیازمندی‌های امنیتی}
+‫در این بخش علت اینکه پروتکل ما هریک از نیازمندی‌های امنیتی را برآورده می‌کند را بیان می‌کنیم.
+‫
+‫\subsection{رمزنگاری انتها به انتها}
+‫از آنجا که بین دوطرف ارتباط، کلیدهایی تبادل می‌شود که نیاز به داده‌های خصوصی یک طرف ارتباط دارد، پروتکل ما این نیازمندی را برآورده می‌کند. برای رمزگشایی پیام‌های ارتباط، نیاز است اطلاعات خصوصی یکی از طرفین را مهاجم بدست بیاورد. همچنین سرور پیام‌ها را به صورت رمز شده می‌بیند و هیچگاه اطلاعات مربوط با ساخت کلید را به صورت کامل بدست نمی‌آورد پس این نیازمندی توسط پروتکل ما برآورده شده است.
+‫
+‫\subsection{تازگی کلید}
+‫اولا توجه کنید که ما مستقل از آنلاین بودن فرد هدف کلید مادر را تبادل می‌کنیم. پس تا وقتی از طرف مقابل پیامی دریافت نکرده باشیم امکان بررسی تازگی نیست. از طرفی حین پاسخ دادن به فرد مقابل، پارامتر جدیدی ایجاد می‌کنیم که آن را خودمان داریم، از طرفی فرد مقابل پس از کدگشایی پیام ما متوجه می‌شود ما این پارامتر را ایجاد کرده ایم که توانسته‌ایم به او پاسخ بدهیم و پیام پیشینش را رمزگشایی کنیم. بنابراین با هر پاسخ گرفتن، دریافت کننده از تازگی کلید می‌تواند اطمینان کسب کند. همچنین از اینکه رچت‌های طرفین با هم سینک است و طرفین می‌توانند پیام‌های یکدیگر را کدگشایی کنند نیز می‌توانند متوجه تازگی کلید بشوند.
+‫
+‫از طرفی توجه کنید که تمامی پیام‌ها امضای مرتبط با \لر{Sequence number} دارند، پس تکرار آن‌ها ممکن نیست، بنابراین مطمئن هستیم کلید ست شده کلیدی تازه خواهد بود چرا که \لر{Sequence number} آن با امضای آن تطابق دارد.
+‫
+‫\subsection{محرمانگی}
+‫واضحا تمامی پیام‌ها به صورت انتها به انتها رمز شده‌اند، پس پروتکل ما محرمانگی را حفظ می‌کند.
+‫
+‫\subsection{صحت و یکپارچگی}
+‫از اینکه امضای پیام با متن آن سازگاری دارد می‌توان به برطرف کردن این نیازمندی پی‌برد. هرکس امضای پیامی را که دریافت کرده را بررسی می‌کند و از آنجا که امضای آن با پیام تطابق دارد می‌تواند به صحت و یکپارچگی آن پی ببرد.
+‫
+‫\subsection{حفظ سازگاری}
+‫به علت وجود \لر{Sequence number} افزایشی در پروتکل ما، این نیازمندی برطرف شده است و دریافت کننده از \لر{Sequence number} پیام دریافتی می‌تواند ترتیب آن را بفهمد.
+‫
+‫\subsection{احراز اصالت}
+‫با بررسی امضای پیام که در آن \لر{Sequence number} حضور دارد، امضای پیام‌های یکسان متفاوت خواهد بود و احراز اصالت پیام‌ها را می‌توان انجام داد. بنابراین هیچ مهاجمی نخواهد توانست از طرف یک کارخواه، پیامی ارسال کند.
+‫
+‫\subsection{عدم انکار}
+‫تمامی پیام‌های ارسالی پس از لاگین، دارای امضا می‌باشند. پس نیازمندی عدم انکار توسط پروتکل ما برطرف شده است.
+‫
+‫\subsection{کنترل دسترسی}
+‫در تمامی پیام‌های کنترلی مرتبط با گروه، سرور بررسی می‌کند که درخواست دهنده ادمین گروه باشد، پس این نیازمندی برطرف شده است. از طرفی حین ارسال پیام به اعضای گروه، سرور بررسی می‌کند که این فرد عضو آن گروه باشد، وگرنه پیام‌های آن را انتقال نمی‌دهد.
+‫
+‫\subsection{حمله‌ی مرد میانی}
+‫هنگام ارتباط کلاینت با سرور، صحت و اصالت سرور با استفاده از کلید عمومی آن بررسی می‌شود، پس از ارتباط با سرور و از آنجا که سرور قابل اعتماد است، هیچگاه امکان حمله‌ی مرد میانی وجود نخواهد داشت. همچنین تمامی پیام‌های کلاینت به سرور هم امضا دارند و در هر پیام احراز اصالت دوطرفه صورت می‌گیرد. پس از احراز اصالت سرور توسط کلاینت هم همانطور که گفته شد، کلیدهای متقارنی ست می‌شوند که برای همان ارتباط هستند.
+‫
+‫\subsection{حمله‌ی تکرار}
+‫برای این حمله در پروتکل ما بخش‌های زیادی وجود دارند. تمامی پیام‌های رد و بدل شده بین کلاینت و سرور استمپ زمانی و یک \لر{Sequence number} دارند. از طرفی تمامی پیام‌های رد و بدل شده بین کلاینت‌ها هم \لر{Sequence number} فزاینده و امضایی مرتبط با این \لر{Sequence number} دارند، بنابراین امکان هیچ‌نوع حمله‌ی تکرار در پروتکل ما وجود ندارد.
+‫
+‫\subsection{استفاده از الگوریتم‌های رمزنگاری امن}
+‫تمامی رمزنگاری‌های متقارن با استفاده از \لر{AES}، تمامی توابع هشا استفاده تابع \لر{SHA256} و توابع رمزنگاری نامتقارن هم \لر{RSA} می‌باشند. همچنین ایجاد اعداد تصادفی هم به صورت امن صورت گرفته‌اند.
+‫
+‫\subsection{محرمانگی پیشرو}
+‫در پروتکل ما کلیدهای رمزنگاری آینده از رد شدن کلیدهای رمزنگاری پیشین از \لر{KDF} ایجاد شده‌اند. این موضوع محرمانگی پیشرو را تضمین می‌کند چرا که \لر{KDF} یک تابع یک طرفه است و از کلیدهای آینده نمی‌توان کلید‌های گذشته را بازیابی کرد.
+‫
+‫\subsection{محرمانگی آینده}
+‫در پروتکل ما روش \لر{Double ratchet} پیاده‌سازی شده است. این موضوع به ما این امکان را می‌دهد که حتی اگر یک کلید نشست لو برود، با تبادل‌های دیفی‌هلمن مکرر، کلید‌های نشست بعدی قابل ایجاد نباشند و عمل \لر{Self Healing} رخ بدهد. با هر جوابی که از سمت مقابل می‌آید، امکان ایجاد کلیدهای آینده از بین می‌رود.
+‫
+‫
+‫\section{نکات قابل توجه}
+‫در پروتکل ما امکان تبادل کلید با فرد آفلاین وجود دارد. علاوه بر این، امکان حذف افراد از گروه نیز در پیاده‌سازی ما وجود دارد. همچنین امکان اضافه کردن افراد آفلاین به گروه و حذف افراد آفلاین از گروه نیز وجود دارد. امنیت پروتکل ما در زمینه‌ی گروه، مشابه امنیت پروتکل ما در چت دوطرفه است و تمامی ویژگی‌های امنیتی را دارد. 
+‫
+‫
+‫\section{نحوه‌ی راه‌اندازی پروژه}
+‫پس از نصب نیاز‌مندی‌ها، برای ران کردن کد سرور به شکل زیر عمل کنید.
+‫
+
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+cd <path_to_project>
+python3 Server.py
+\end{lstlisting}
+\end{latin}
+
+‫برای راه‌اندازی کلاینت هم به صورت زیر عمل کنید.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+cd <path_to_project>
+python3 Client.py
+\end{lstlisting}
+\end{latin}
+‫
+‫در منوها تمامی کامندها و نحوه‌ی استفاده از آن‌ها نمایش داده می‌شوند، برای مثال در شکل~\رجوع{4} ایمان در منوی گروه است می‌تواند کامندهای زیر را اجرا کند.
+‫
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+refresh
+send Hello world
+verify keys
+add reza
+remove ali
+list members
+back
+\end{lstlisting}
+\end{latin}
+
+‫
+‫علی که در منوی چت با ایمان است می‌تواند کامند‌های زیر را اجرا کند.
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+refresh
+send hey iman
+verify keys
+back
+\end{lstlisting}
+\end{latin}
+‫
+‫و رضا که در منوی اصلی است می‌تواند کامند‌های زیر را اجرا کند.
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+show users list
+open chat iman
+create group dns2
+open group dns
+renew keys
+logout
+\end{lstlisting}
+\end{latin}
+
+‫اگر رضا دروضعیت پیش از ورود باشد هم می‌تواند کامند‌های زیر را اجرا کند.
+\begin{latin}
+\begin{lstlisting}[firstnumber=1, language=bash]
+register reza2
+login reza
+\end{lstlisting}
+\end{latin}
+
+‫
+‫\شروع{شکل}[H]
+‫\centerimg{4.png}{15.5cm}
+‫\شرح{نمایش تمامی منوها}
+‫\برچسب{4}
+‫\پایان{شکل}
+‫
+‫درنهایت برای مشاهده‌ی ریپوی گیتهاب ما، می‌توانید به~\مرجع{code} مراجعه کنید.
+‫
