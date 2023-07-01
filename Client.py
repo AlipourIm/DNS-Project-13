@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import time
+from getpass import getpass
 from typing import List, Dict, Optional
 
 from cryptography.exceptions import InvalidSignature
@@ -37,6 +38,7 @@ def dump_chat(chat):
                    "DH_key": chat.DH_key,
                    "our_pr": chat.our_pr,
                    "their_pk": chat.their_pk,
+                   "their_rsa_pk": chat.their_rsa_pk,
                    "seq": chat.seq,
                    "username": chat.username,
                    "messages": []}
@@ -60,6 +62,7 @@ def load_chat(dumped_chat):
     chat.DH_key = dumped_chat["DH_key"]
     chat.our_pr = dumped_chat["our_pr"]
     chat.their_pk = dumped_chat["their_pk"]
+    chat.their_rsa_pk = dumped_chat["their_rsa_pk"]
     chat.seq = dumped_chat["seq"]
     chat.messages = []
     for message in dumped_chat["messages"]:
@@ -117,7 +120,6 @@ def load_db(username, password_hash):
         chats[chat.username] = chat
 
     for dumped_group in db["groups"]:
-        print("loading group...")
         group = Group(dumped_group["admin_username"], dumped_group["group_name"])
         group.usernames = dumped_group["usernames"]
         group.chat = load_chat(dumped_group["chat"])
@@ -166,17 +168,24 @@ def register_new_user(username, password):
     if os.path.isdir(f"./user/{username}"):
         print("User already exists with this username.")
         return False
+    message_type = "register"
+    return initialize_user(message_type, username, password)
+
+
+def initialize_user(message_type: str, username: str, password: str, old_password_hash="") -> bool:
+    global client_user
     rsa_pr, rsa_pk = RSA.gen_key(username, password)
     elgamal_pr, elgamal_pk = ElGamal.gen_key(username, password)
     prekey_pr, prekey_pk = ElGamal.gen_key(username, password, "prekey")
     password_hash = Resources.get_hash(username + password)
-    message = f"register{Resources.SEP}" \
-              f"{username}{Resources.SEP}" \
+    second_field = username if message_type == "register" else old_password_hash
+    message = f"{message_type}{Resources.SEP}" \
+              f"{second_field}{Resources.SEP}" \
               f"{password_hash}{Resources.SEP}" \
               f"{rsa_pk}{Resources.SEP}" \
               f"{elgamal_pk}{Resources.SEP}" \
               f"{prekey_pk}{Resources.SEP}"
-    send_to_server(message, sign=False)
+    send_to_server(message, sign=(message_type != "register"))
     response = receive_from_server().split(Resources.SEP)
     print(response[2])
     if response[0] == "200":
@@ -190,7 +199,8 @@ def create_user(username, password):
     RSA.validate_keys(rsa_pr, rsa_pk)
     ElGamal.validate_keys(elgamal_pr, elgamal_pk)
 
-    return User(username, Resources.get_hash(password), rsa_pk, elgamal_pk, prekey_pk, rsa_pr, elgamal_pr, prekey_pr)
+    return User(username, Resources.get_hash(username + password), rsa_pk, elgamal_pk, prekey_pk, rsa_pr, elgamal_pr,
+                prekey_pr)
 
 
 def login_user(username, password):
@@ -206,7 +216,7 @@ def login_user(username, password):
     except Resources.WrongPasswordException:
         print("Wrong password or keys are manipulated")
         return False
-    load_db(username, Resources.get_hash(password))
+    load_db(username, Resources.get_hash(username + password))
     message = f"login{Resources.SEP}" \
               f"{username}"
     send_to_server(message, False)
@@ -268,13 +278,19 @@ def x3dh_key_exchange(target_user: User, seq=0) -> bool:
     chat.DH_key = ElGamal.DH_key(target_user.prekey_pk, client_user.prekey_pr)
     chat.our_pr = client_user.prekey_pr
     chat.their_pk = target_user.prekey_pk
+    chat.their_rsa_pk = target_user.rsa_pk
 
     new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
     chat.root_key = new_root_key
     chat.message_key = message_key
 
-    i_m = str(client_user.elgamal_pk) + Resources.SEP + str(ek_pk) + Resources.SEP + str(target_user.prekey_pk)
-    initial_message = i_m
+    initial_message = str(client_user.elgamal_pk) \
+                      + Resources.SEP + str(target_user.prekey_pk) \
+                      + Resources.SEP + str(ek_pk) \
+                      + Resources.SEP + client_user.rsa_pk \
+                      + Resources.SEP + str(client_user.prekey_pk)
+
+    print(initial_message)
 
     message_obj = Message(message_type="x3dh",
                           source_username=client_user.username,
@@ -294,14 +310,18 @@ def x3dh_key_exchange(target_user: User, seq=0) -> bool:
 def x3dh_extract_key(text: str):
     print("receiving key...")
 
-    A_elgamal_pk, A_ek_pk, prekey_pk = list(map(int, text.split(Resources.SEP)))
+    A_elgamal_pk, our_prekey_pk, A_ek_pk, their_rsa_pk, their_prekey_pk = text.split(Resources.SEP)
+    A_elgamal_pk = int(A_elgamal_pk)
+    our_prekey_pk = int(our_prekey_pk)
+    A_ek_pk = int(A_ek_pk)
+    their_prekey_pk = int(their_prekey_pk)
 
     DH1 = ElGamal.DH_key(A_elgamal_pk, client_user.prekey_pr)
     DH2 = ElGamal.DH_key(A_ek_pk, client_user.elgamal_pr)
     DH3 = ElGamal.DH_key(A_ek_pk, client_user.prekey_pr)
 
     SK = AES.generate_symmetric_key(str(DH1) + str(DH2) + str(DH3))
-    return SK
+    return SK, their_prekey_pk, their_rsa_pk
 
 
 def retrieve_keys(username: str):
@@ -350,11 +370,14 @@ def send_group_message(group: Group, message_type, text):
                           text=text,
                           target_group=group.group_name)
 
+    # save our own message to chat of group
+    group.chat.append_message(message_obj)
+
+    # send the message to other members of group
     for username in group.usernames:
         if username != client_user.username:
             open_chat(username)
-            if send_message(chats[username], message_type, text, group.group_name):
-                group.chat.append_message(message_obj)
+            send_message(chats[username], message_type, text, group.group_name)
 
 
 def send_message_to_server(chat, message_type, text, target_group=""):
@@ -400,7 +423,8 @@ def receive_message(chat: Chat, message_obj: Message):
     user = get_user_by_chat(chat)
     try:
         RSA.verify_signature(str(message_obj.seq) + message_obj.text, message_obj.signature,
-                             RSA.pem_to_public_key(user.rsa_pk))
+                             RSA.pem_to_public_key(chat.their_rsa_pk))
+        message_obj.source_rsa_pk = chat.their_rsa_pk
     except InvalidSignature:
         return
 
@@ -441,7 +465,7 @@ def fetch_messages():
             retrieve_keys(source_username)
 
         if message_type == "x3dh":
-            SK = x3dh_extract_key(text)
+            SK, their_prekey_pk, their_rsa_pk = x3dh_extract_key(text)
 
             if source_username not in chats:
                 chats[source_username] = Chat(source_username)
@@ -449,11 +473,13 @@ def fetch_messages():
             chat = chats[source_username]
             chat.append_message(message_obj)
 
-            their_prekey_pk = get_user_by_chat(chat).prekey_pk
             chat.root_key = SK
             chat.DH_key = ElGamal.DH_key(their_prekey_pk, client_user.prekey_pr)
             chat.our_pr = client_user.prekey_pr
             chat.their_pk = their_prekey_pk
+            chat.their_rsa_pk = their_rsa_pk
+
+            message_obj.source_rsa_pk = chat.their_rsa_pk
 
             new_root_key, message_key = chat.KDF(chat.DH_key, chat.root_key)
             chat.root_key = new_root_key
@@ -691,6 +717,19 @@ def group_menu(group: Group):
             print("Wrong command!")
 
 
+def renew_keys(old_password, new_password):
+    # fetch messages received from other users based on our old keys
+    fetch_messages()
+
+    if Resources.get_hash(client_user.username + old_password) != client_user.password_hash:
+        print("Wrong password.")
+        return
+    old_password_hash = Resources.get_hash(client_user.username + old_password)
+    if initialize_user("renew", client_user.username, new_password, old_password_hash):
+        for target_user in users:
+            x3dh_key_exchange(target_user)
+
+
 def user_menu():
     while True:
         input("Press Enter to continue...")
@@ -700,7 +739,8 @@ def user_menu():
               "  2: open chat <username>\n"
               "  3: create group <group_name>\n"
               "  4: open group <group_name>\n"
-              "  5: logout")
+              "  5: renew keys <old password> <new password>\n"
+              "  6: logout")
         command = input("  > ").split()
         print()
         if len(command) == 0:
@@ -716,6 +756,10 @@ def user_menu():
         elif command[0] == "open" and command[1] == "group":
             if open_group(command[2]):
                 group_menu(groups[command[2]])
+        elif command[0] == "renew":
+            old_password = getpass("Old password: ")
+            new_password = getpass("New password: ")
+            renew_keys(old_password, new_password)
         elif command[0] == "logout":
             logout()
             return
@@ -728,17 +772,19 @@ def main_menu():
         input("Press Enter to continue...")
         os.system('cls' if os.name == 'nt' else 'clear')
 
-        print("  1: register <username> <password>\n"
-              "  2: login <username> <password>")
+        print("  1: register <username>\n"
+              "  2: login <username>")
         command = input("  > ").split()
         print()
         if len(command) == 0:
             continue
-        if command[0] == "register" and len(command) == 3:
-            if register_new_user(command[1], command[2]):
+        if command[0] == "register" and len(command) == 2:
+            password = getpass()
+            if register_new_user(command[1], password):
                 user_menu()
-        elif command[0] == "login" and len(command) == 3:
-            if login_user(command[1], command[2]):
+        elif command[0] == "login" and len(command) == 2:
+            password = getpass()
+            if login_user(command[1], password):
                 user_menu()
         else:
             print("Wrong command!")
@@ -750,6 +796,7 @@ if __name__ == "__main__":
         main_menu()
     finally:
         if client_user is not None:
+            print("Something bad happened. Logging out...")
             save_to_db()
             logout()
         https_socket.close()

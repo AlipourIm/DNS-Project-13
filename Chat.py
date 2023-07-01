@@ -15,6 +15,7 @@ class Chat:
         self.DH_key: int = 0
         self.our_pr: int = 0
         self.their_pk: int = 0
+        self.their_rsa_pk: str = ""
 
     def append_message(self, message: Message):
         self.messages.append(message)

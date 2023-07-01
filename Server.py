@@ -89,6 +89,26 @@ def register_new_user(client_socket: socket.socket, username, password_hash, rsa
     return new_user
 
 
+def renew_keys(client_socket: socket.socket, user: User, old_password_hash, new_password_hash, rsa_pk, elgamal_pk,
+               prekey_pk):
+    if user.password_hash != old_password_hash:
+        response = f"400{Resources.SEP}" \
+                   f"Bad Request{Resources.SEP}" \
+                   f"Wrong password"
+        response_client(client_socket, response)
+
+    user.password_hash = new_password_hash
+    user.rsa_pk = rsa_pk
+    user.elgamal_pk = elgamal_pk
+    user.prekey_pk = prekey_pk
+
+    response = f"200{Resources.SEP}" \
+               f"OK{Resources.SEP}" \
+               f"Keys and password renewed successfully"
+    response_client(client_socket, response)
+    return
+
+
 def login_user(client_socket: socket.socket, username):
     for user in users:
         if username == user.username:
@@ -378,6 +398,8 @@ def client_handler(client, address):
 
             if arr[0] == "register":
                 user = register_new_user(client, arr[1], arr[2], arr[3], arr[4], arr[5])
+            elif arr[0] == "renew":
+                renew_keys(client, user, arr[1], arr[2], arr[3], arr[4], arr[5])
             elif arr[0] == "show users list":
                 show_users_list(client)
             elif arr[0] == "login":
