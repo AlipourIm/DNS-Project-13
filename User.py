@@ -2,7 +2,6 @@ import Resources
 
 
 class User:
-
     def __init__(self, username, password_hash, rsa_pk, elgamal_pk, prekey_pk, rsa_pr="", elgamal_pr="", prekey_pr=""):
         self.rsa_pr = rsa_pr
         self.rsa_pk = rsa_pk
